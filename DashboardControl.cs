@@ -35,7 +35,7 @@ namespace LegalOfficeApp
                 cardRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f));
 
             cardRow.Controls.Add(StatCard("Total Documents", "67", "📄", Navy),  0, 0);
-            cardRow.Controls.Add(StatCard("Pending",         "8",  "📋", Amber), 1, 0);
+            cardRow.Controls.Add(StatCard("Pending",         "8",  "🔃", Amber), 1, 0);
             cardRow.Controls.Add(StatCard("Approved",        "3",  "✔",  Green), 2, 0);
             cardRow.Controls.Add(StatCard("Rejected",        "7",  "✖",  Gray),  3, 0);
 
