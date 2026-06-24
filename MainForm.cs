@@ -1,19 +1,15 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
-using CG.Web.MegaApiClient;
-
 
 namespace LegalOfficeApp
 {
     public partial class MainForm : Form
     {
-        private readonly MegaApiClient client = new MegaApiClient();
         private readonly Color Navy      = Color.FromArgb(10, 26, 107);
         private readonly Color NavyHover = Color.FromArgb(20, 40, 130);
         private readonly Color BgGray    = Color.FromArgb(240, 240, 240);
 
-        private MegaService mega = new MegaService();
         private Panel  panelMenu;
         private Label  logo;
         private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs, btnSignOut;
@@ -43,22 +39,6 @@ namespace LegalOfficeApp
             OpenPage(ucDashboard, btnDashboard, "DASHBOARD");
         }
 
-        private async void mainMenu_Load(object sender, EventArgs e)
-        {
-            try
-            {
-                await mega.LoginAsync(
-                    "gplopez@ccc.edu.ph",
-                    "megaPass20*"
-                );
-
-                MessageBox.Show("Connected to MEGA!");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-            }
-        }
         private void BuildLayout()
         {
             Text          = "Legal Office – Calamba City";
@@ -68,7 +48,6 @@ namespace LegalOfficeApp
             BackColor     = BgGray;
             Font          = new Font("Segoe UI", 9f);
 
-            this.Icon = new Icon("C:\\Users\\Admin\\source\\repos\\NotaryApp\\resources\\logo.ico");
             // Instantiate pages first
             ucDashboard  = new DashboardControl  { Dock = DockStyle.Fill };
             ucSubmission = new SubmissionControl  { Dock = DockStyle.Fill };
@@ -195,7 +174,7 @@ namespace LegalOfficeApp
             };
             var lblUser = new Label
             {
-                Text      = "👤  Admin Juan",
+                Text      = $"👤  {SessionManager.Current?.FullName ?? "User"}",
                 Font      = new Font("Segoe UI", 9f),
                 ForeColor = Color.FromArgb(80, 80, 80),
                 Dock      = DockStyle.Right,
@@ -229,6 +208,11 @@ namespace LegalOfficeApp
             panelContent.Controls.Clear();
             panelContent.Controls.Add(page);
             lblPageTitle.Text = title;
+
+            // Refresh data from DB whenever a page is opened
+            if (page is DashboardControl  db) db.RefreshData();
+            if (page is TrackingControl   tr) tr.RefreshData();
+            if (page is LogsControl       lg) lg.RefreshData();
 
             if (_activeBtn != null)
             {

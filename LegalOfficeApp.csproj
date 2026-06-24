@@ -12,15 +12,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Update="appsettings.json">
-    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <!-- SQLite -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <!-- MEGA -->
+    <PackageReference Include="MegaApiClient"         Version="1.10.5" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FirebaseAuthentication.net" Version="4.1.0" />
-    <PackageReference Include="FirebaseStorage.net" Version="1.0.3" />
-    <PackageReference Include="MegaApiClient" Version="1.10.5" />
+    <!-- Copy appsettings.json (MEGA credentials) to output -->
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

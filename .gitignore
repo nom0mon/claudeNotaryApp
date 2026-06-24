@@ -428,5 +428,10 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-#Custom local configuration files
+#Custom local configuration files  - NEVER commit this
 appsettings.json
+
+# SQLite database
+*.db
+*.db-shm
+*.db-wal

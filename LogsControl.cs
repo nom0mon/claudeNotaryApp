@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
 
 namespace LegalOfficeApp
@@ -8,25 +7,9 @@ namespace LegalOfficeApp
     public class LogsControl : UserControl
     {
         private readonly Color Navy = Color.FromArgb(10, 26, 107);
-
-        private DataGridView  dgv;
-        private ComboBox      cboAction;
+        private DataGridView   dgv;
+        private ComboBox       cboAction;
         private DateTimePicker dtpFrom, dtpTo;
-
-        // ISO timestamps for accurate date filtering
-        private readonly (string Ts, string User, string Action, string Details)[] _allLogs =
-        {
-            ("2026-06-23 09:14", "Atty. Maria Santos", "Submission", "Submitted Book #45"),
-            ("2026-06-23 08:30", "Admin Juan",         "Approval",   "Approved Book #44 — Atty. Jose Reyes"),
-            ("2026-06-23 08:00", "Admin Juan",         "Login",      "Logged into the system"),
-            ("2026-06-22 16:12", "Admin Juan",         "Rejection",  "Rejected Book #41 — incomplete documents"),
-            ("2026-06-22 14:45", "Atty. Pedro Lim",   "Submission", "Submitted Book #42"),
-            ("2026-06-20 10:05", "Atty. Jose Reyes",  "Submission", "Submitted Book #44"),
-            ("2026-06-18 15:20", "Admin Juan",         "Approval",   "Approved Book #43 — Atty. Ana Cruz"),
-            ("2026-06-18 09:00", "Atty. Ana Cruz",    "Submission", "Submitted Book #43"),
-            ("2026-06-15 11:30", "Atty. Pedro Lim",   "Submission", "Submitted Book #41"),
-            ("2026-06-10 08:45", "Admin Juan",         "Login",      "Logged into the system"),
-        };
 
         public LogsControl()
         {
@@ -34,9 +17,11 @@ namespace LegalOfficeApp
             BuildUI();
         }
 
+        public void RefreshData() => ApplyFilter();
+
         private void BuildUI()
         {
-            // ── Filter bar ──────────────────────────────────────────
+            // ── Filter bar ──────────────────────────────────────
             var filterCard = new Panel
             {
                 Dock      = DockStyle.Top,
@@ -45,27 +30,25 @@ namespace LegalOfficeApp
                 Padding   = new Padding(14, 10, 14, 10)
             };
 
-            // Action combo
             var lblAction = new Label { Text = "Action:", Location = new Point(0, 8), AutoSize = true, Font = new Font("Segoe UI", 9f) };
             cboAction = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Width         = 110,
                 Font          = new Font("Segoe UI", 9.5f),
-                Location      = new Point(50, 4)
+                Location      = new Point(52, 4)
             };
-            cboAction.Items.AddRange(new object[] { "All Actions", "Submission", "Approval", "Rejection", "Login" });
+            cboAction.Items.AddRange(new object[] { "All Actions", "Submission", "Approval", "Rejection", "Login", "Logout", "Warning" });
             cboAction.SelectedIndex         = 0;
             cboAction.SelectedIndexChanged += (s, e) => ApplyFilter();
 
-            // Date range
             var lblFrom = new Label { Text = "From:", Location = new Point(172, 8), AutoSize = true, Font = new Font("Segoe UI", 9f) };
             dtpFrom = new DateTimePicker
             {
                 Format   = DateTimePickerFormat.Short,
                 Width    = 96,
                 Location = new Point(210, 4),
-                Value    = new DateTime(2026, 6, 1),
+                Value    = new DateTime(DateTime.Now.Year, 1, 1),
                 Font     = new Font("Segoe UI", 9f)
             };
             dtpFrom.ValueChanged += (s, e) => ApplyFilter();
@@ -98,7 +81,7 @@ namespace LegalOfficeApp
             filterCard.Controls.AddRange(new Control[]
                 { lblAction, cboAction, lblFrom, dtpFrom, lblTo, dtpTo, btnExport });
 
-            // ── Grid ─────────────────────────────────────────────────
+            // ── Grid ─────────────────────────────────────────────
             var gridCard = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(0, 8, 0, 0) };
 
             dgv = new DataGridView
@@ -117,23 +100,22 @@ namespace LegalOfficeApp
                 AllowUserToResizeRows = false,
                 RowTemplate           = { Height = 36 }
             };
-            dgv.DefaultCellStyle.SelectionBackColor            = Color.FromArgb(220, 230, 255);
-            dgv.DefaultCellStyle.SelectionForeColor            = Color.Black;
-            dgv.DefaultCellStyle.Padding                       = new Padding(4, 0, 4, 0);
-            dgv.ColumnHeadersDefaultCellStyle.BackColor        = Color.FromArgb(245, 245, 248);
-            dgv.ColumnHeadersDefaultCellStyle.Font             = new Font("Segoe UI", 9f, FontStyle.Bold);
-            dgv.ColumnHeadersDefaultCellStyle.Padding          = new Padding(4, 0, 4, 0);
-            dgv.EnableHeadersVisualStyles                      = false;
-            dgv.ColumnHeadersHeight                            = 36;
-            dgv.ColumnHeadersHeightSizeMode                    = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+            dgv.DefaultCellStyle.SelectionBackColor     = Color.FromArgb(220, 230, 255);
+            dgv.DefaultCellStyle.SelectionForeColor     = Color.Black;
+            dgv.DefaultCellStyle.Padding                = new Padding(4, 0, 4, 0);
+            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(245, 245, 248);
+            dgv.ColumnHeadersDefaultCellStyle.Font      = new Font("Segoe UI", 9f, FontStyle.Bold);
+            dgv.EnableHeadersVisualStyles               = false;
+            dgv.ColumnHeadersHeight                     = 36;
+            dgv.ColumnHeadersHeightSizeMode             = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
 
             dgv.Columns.Add("Timestamp", "Timestamp");
             dgv.Columns.Add("User",      "User");
             dgv.Columns.Add("Action",    "Action");
             dgv.Columns.Add("Details",   "Details");
 
-            dgv.Columns["Timestamp"].FillWeight = 18;
-            dgv.Columns["User"]     .FillWeight = 20;
+            dgv.Columns["Timestamp"].FillWeight = 20;
+            dgv.Columns["User"]     .FillWeight = 18;
             dgv.Columns["Action"]   .FillWeight = 13;
             dgv.Columns["Details"]  .FillWeight = 49;
 
@@ -143,31 +125,36 @@ namespace LegalOfficeApp
             this.Controls.Add(gridCard);
             this.Controls.Add(filterCard);
 
-            // Load data after controls are set up
-            ApplyFilter();
+            this.HandleCreated += (s, e) => ApplyFilter();
         }
 
-        // ── Filter — rebuild rows from master data ─────────────────
+        // ── Pull from DB ────────────────────────────────────────
         private void ApplyFilter()
         {
-            string action = cboAction.SelectedItem?.ToString() ?? "All Actions";
-            DateTime from = dtpFrom.Value.Date;
-            DateTime to   = dtpTo.Value.Date.AddDays(1).AddTicks(-1); // inclusive end-of-day
+            string action = cboAction?.SelectedItem?.ToString() ?? "All Actions";
+
+            string? actionFilter = action == "All Actions" ? null : action;
+            DateTime? from       = dtpFrom?.Value.Date;
+            DateTime? to         = dtpTo?.Value.Date;
+
+            var logs = DatabaseService.Instance.GetLogs(actionFilter, from, to);
 
             dgv.Rows.Clear();
-
-            foreach (var log in _allLogs)
+            foreach (var log in logs)
             {
-                bool actionOk = action == "All Actions" || log.Action == action;
-                bool dateOk   = DateTime.TryParse(log.Ts, out var dt) && dt.Date >= from && dt.Date <= dtpTo.Value.Date;
-
-                if (actionOk && dateOk)
-                    dgv.Rows.Add(FmtTs(log.Ts), log.User, log.Action, log.Details);
+                dgv.Rows.Add(
+                    log.Timestamp.ToString("MMM dd, yyyy  h:mm tt"),
+                    log.User,
+                    log.Action,
+                    log.Details);
             }
+
+            if (dgv.Rows.Count == 0)
+                dgv.Rows.Add("—", "—", "—", "No logs found for the selected filter.");
         }
 
-        // ── Cell formatting ────────────────────────────────────────
-        private void Dgv_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
+        // ── Cell formatting ─────────────────────────────────────
+        private void Dgv_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
         {
             if (e.ColumnIndex != dgv.Columns["Action"].Index || e.Value == null) return;
             switch (e.Value.ToString())
@@ -184,16 +171,20 @@ namespace LegalOfficeApp
                     e.CellStyle.ForeColor = Color.FromArgb(163, 45, 45);
                     e.CellStyle.BackColor = Color.FromArgb(252, 235, 235);
                     break;
-                case "Login":
+                case "Login": case "Logout":
                     e.CellStyle.ForeColor = Color.FromArgb(24, 95, 165);
                     e.CellStyle.BackColor = Color.FromArgb(230, 241, 251);
+                    break;
+                case "Warning":
+                    e.CellStyle.ForeColor = Color.FromArgb(130, 60, 0);
+                    e.CellStyle.BackColor = Color.FromArgb(255, 245, 220);
                     break;
             }
             e.CellStyle.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
         }
 
-        // ── Export ─────────────────────────────────────────────────
-        private void Export_Click(object sender, EventArgs e)
+        // ── Export ──────────────────────────────────────────────
+        private void Export_Click(object? sender, EventArgs e)
         {
             using var dlg = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "activity_logs.csv" };
             if (dlg.ShowDialog() != DialogResult.OK) return;
@@ -202,13 +193,12 @@ namespace LegalOfficeApp
             foreach (DataGridViewRow row in dgv.Rows)
             {
                 if (row.IsNewRow) continue;
-                sw.WriteLine($"{row.Cells["Timestamp"].Value},{row.Cells["User"].Value}," +
-                             $"{row.Cells["Action"].Value},{row.Cells["Details"].Value}");
+                sw.WriteLine($"\"{row.Cells["Timestamp"].Value}\"," +
+                             $"\"{row.Cells["User"].Value}\"," +
+                             $"\"{row.Cells["Action"].Value}\"," +
+                             $"\"{row.Cells["Details"].Value}\"");
             }
             MessageBox.Show("Logs exported.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
-
-        private static string FmtTs(string raw) =>
-            DateTime.TryParse(raw, out var dt) ? dt.ToString("MMM dd, yyyy  h:mm tt") : raw;
     }
 }
