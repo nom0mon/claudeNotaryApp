@@ -10,10 +10,13 @@ namespace LegalOfficeApp
     {
         private readonly Color Navy = Color.FromArgb(10, 26, 107);
 
-        private TextBox        txtName, txtPTR, txtIBP, txtBookNo, txtYear;
         private DateTimePicker dtpCommission;
+        private TextBox        txtYear;
         private Label          lblAttachedFile;
         private string         attachedFilePath = "";
+        private Button         btnSubmit;
+        private bool           _uploading = false;
+        private System.Threading.CancellationTokenSource? _cts;
 
         public SubmissionControl()
         {
@@ -24,29 +27,28 @@ namespace LegalOfficeApp
 
         private void BuildUI()
         {
-            var infoCard = Card("Notary Information", 240);
+            // ── Card: Document Info ──────────────────────────────
+            var infoCard = Card("Document Information", 180);
 
             var grid = new TableLayoutPanel
             {
                 Dock        = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount    = 3,
+                RowCount    = 1,
                 BackColor   = Color.White,
                 Padding     = new Padding(0, 4, 0, 4)
             };
-            for (int i = 0; i < 2; i++) grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-            for (int i = 0; i < 3; i++) grid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-            txtName   = Field(grid, "Notary Full Name",   0, 0);
-            txtPTR    = Field(grid, "PTR Number",         0, 1);
-            txtIBP    = Field(grid, "IBP Number",         1, 0);
-            DateField(grid,          "Date of Commission", 1, 1);
-            txtBookNo = Field(grid, "Book Number",        2, 0);
-            txtYear   = Field(grid, "Year Covered",       2, 1);
+            DateField(grid, "Date of Commission", 0, 0);
+            txtYear = Field(grid, "Year Covered (e.g. 2024)", 0, 1);
 
             infoCard.Controls.Add(grid);
 
-            var attachCard = Card("Attach Notarial Book (PDF)", 170);
+            // ── Card: Attach PDF ─────────────────────────────────
+            var attachCard = Card("Attach Notarial Book (PDF)", 200);
 
             var uploadZone = new Panel
             {
@@ -67,9 +69,38 @@ namespace LegalOfficeApp
                 ForeColor = Color.Gray
             };
 
+            // Cancel upload button — hidden unless uploading
+            var btnCancel = new Button
+            {
+                Text      = "✖  Cancel Upload",
+                Dock      = DockStyle.Top,
+                Height    = 30,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(163, 45, 45),
+                ForeColor = Color.White,
+                Font      = new Font("Segoe UI", 9f),
+                Cursor    = Cursors.Hand,
+                Visible   = false
+            };
+            btnCancel.FlatAppearance.BorderSize = 0;
+            btnCancel.Click += (s, e) =>
+            {
+                _cts?.Cancel();
+                btnCancel.Visible         = false;
+                lblAttachedFile.Text      = "⚠  Upload cancelled.";
+                lblAttachedFile.ForeColor = Color.FromArgb(133, 79, 11);
+                btnSubmit.Enabled         = true;
+                _uploading                = false;
+            };
+
             attachCard.Controls.Add(lblAttachedFile);
+            attachCard.Controls.Add(btnCancel);
             attachCard.Controls.Add(uploadZone);
 
+            // Store reference so Submit can toggle it
+            attachCard.Tag = btnCancel;
+
+            // ── Action buttons ───────────────────────────────────
             var btnRow = new Panel
             {
                 Dock      = DockStyle.Top,
@@ -78,17 +109,18 @@ namespace LegalOfficeApp
                 Padding   = new Padding(0, 10, 0, 0)
             };
 
-            var btnSubmit = Btn("Submit",     true);
-            var btnDraft  = Btn("Save Draft", false);
-            btnSubmit.Click += Submit_Click;
-            btnDraft .Click += SaveDraft_Click;
+            btnSubmit        = Btn("Submit", true);
+            var btnClearForm = Btn("Clear Form", false);
+
+            btnSubmit  .Click += Submit_Click;
+            btnClearForm.Click += (s, e) => ClearForm();
 
             btnRow.Controls.Add(btnSubmit);
-            btnRow.Controls.Add(btnDraft);
+            btnRow.Controls.Add(btnClearForm);
             btnRow.SizeChanged += (s, e) =>
             {
-                btnSubmit.Location = new Point(btnRow.Width - 110, 10);
-                btnDraft .Location = new Point(btnRow.Width - 225, 10);
+                btnSubmit   .Location = new Point(btnRow.Width - 110, 10);
+                btnClearForm.Location = new Point(btnRow.Width - 225, 10);
             };
 
             this.Controls.Add(btnRow);
@@ -96,16 +128,13 @@ namespace LegalOfficeApp
             this.Controls.Add(infoCard);
         }
 
-        // ── Submit: save to SQLite, upload to MEGA ────────────────
+        // ── Submit ───────────────────────────────────────────────
         private async void Submit_Click(object sender, EventArgs e)
         {
-            // Validation
-            if (string.IsNullOrWhiteSpace(txtName.Text) ||
-                string.IsNullOrWhiteSpace(txtPTR.Text)  ||
-                string.IsNullOrWhiteSpace(txtBookNo.Text))
+            if (string.IsNullOrWhiteSpace(txtYear.Text))
             {
-                MessageBox.Show("Please fill in Notary Name, PTR Number, and Book Number.",
-                    "Required Fields", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please enter the Year Covered.",
+                    "Required Field", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             if (string.IsNullOrEmpty(attachedFilePath) || !File.Exists(attachedFilePath))
@@ -115,34 +144,45 @@ namespace LegalOfficeApp
                 return;
             }
 
-            var btnSubmit = (Button)sender;
             btnSubmit.Enabled = false;
+            _uploading        = true;
+            _cts              = new System.Threading.CancellationTokenSource();
+
+            // Reveal cancel button
+            var btnCancel = (Button?)(attachedFilePath == null
+                ? null : this.Controls[1]?.Tag);
+            // Find it properly
+            Button? cancelBtn = null;
+            foreach (Control c in this.Controls)
+                if (c is Panel p && p.Tag is Button b) { cancelBtn = b; break; }
+            if (cancelBtn != null) cancelBtn.Visible = true;
 
             try
             {
-                // ── Step 1: Save to SQLite immediately (status = Pending, no MEGA link yet)
+                string fileName = Path.GetFileName(attachedFilePath);
+
                 var submission = new Submission
                 {
-                    BookNumber       = txtBookNo.Text.Trim(),
-                    NotaryName       = txtName.Text.Trim(),
-                    PtrNumber        = txtPTR.Text.Trim(),
-                    IbpNumber        = txtIBP.Text.Trim(),
+                    FileName         = fileName,
                     DateOfCommission = dtpCommission.Value.ToShortDateString(),
                     YearCovered      = txtYear.Text.Trim(),
                     LocalFilePath    = attachedFilePath,
-                    FileName         = Path.GetFileName(attachedFilePath),
                     SubmittedBy      = SessionManager.Current?.FullName ?? "Unknown",
-                    DateSubmitted    = DateTime.Now
+                    DateSubmitted    = DateTime.Now,
+                    // Derive a book number from year + filename for tracking
+                    BookNumber       = $"{txtYear.Text.Trim()}-{Path.GetFileNameWithoutExtension(fileName)}",
+                    NotaryName       = SessionManager.Current?.FullName ?? "Unknown",
+                    PtrNumber        = "",
+                    IbpNumber        = ""
                 };
 
                 int newId = DatabaseService.Instance.InsertSubmission(submission);
 
-                // Log the submission
                 DatabaseService.Instance.InsertLog(
                     submission.SubmittedBy, "Submission",
-                    $"Submitted Book {submission.BookNumber} (ID: {newId})");
+                    $"Submitted '{fileName}' for year {submission.YearCovered} (ID: {newId})");
 
-                // ── Step 2: Upload to MEGA
+                // MEGA upload
                 lblAttachedFile.Text      = "⏫  Connecting to MEGA...";
                 lblAttachedFile.ForeColor = Navy;
 
@@ -159,40 +199,60 @@ namespace LegalOfficeApp
 
                     var mega = new MegaService();
                     mega.OnUploadProgress = pct =>
-                        this.Invoke(() => lblAttachedFile.Text = $"⏫  Uploading... {pct:F0}%");
+                        this.Invoke(() =>
+                        {
+                            if (!_cts.Token.IsCancellationRequested)
+                                lblAttachedFile.Text = $"⏫  Uploading... {pct:F0}%";
+                        });
+
+                    if (_cts.Token.IsCancellationRequested) return;
 
                     await mega.LoginAsync(email, password);
-                    megaLink = await mega.UploadPdfAsync(attachedFilePath, submission.BookNumber);
+
+                    if (_cts.Token.IsCancellationRequested)
+                    {
+                        await mega.LogoutAsync();
+                        return;
+                    }
+
+                    megaLink = await mega.UploadPdfAsync(attachedFilePath, submission.YearCovered);
                     await mega.LogoutAsync();
 
-                    // ── Step 3: Update DB row with the MEGA link
-                    DatabaseService.Instance.UpdateSubmissionMegaLink(newId, megaLink);
-                    uploaded = true;
-
-                    lblAttachedFile.Text      = "✔  Uploaded to MEGA!";
-                    lblAttachedFile.ForeColor = Color.FromArgb(58, 96, 18);
+                    if (!_cts.Token.IsCancellationRequested)
+                    {
+                        DatabaseService.Instance.UpdateSubmissionMegaLink(newId, megaLink);
+                        uploaded = true;
+                        lblAttachedFile.Text      = "✔  Uploaded to MEGA!";
+                        lblAttachedFile.ForeColor = Color.FromArgb(58, 96, 18);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    lblAttachedFile.Text      = "⚠  Upload cancelled.";
+                    lblAttachedFile.ForeColor = Color.FromArgb(133, 79, 11);
+                    return;
                 }
                 catch (Exception megaEx)
                 {
-                    // Upload failed — record is still saved in DB, just without a link
                     lblAttachedFile.Text      = "⚠  Saved locally. MEGA upload failed.";
                     lblAttachedFile.ForeColor = Color.FromArgb(163, 45, 45);
                     DatabaseService.Instance.InsertLog(
                         submission.SubmittedBy, "Warning",
-                        $"MEGA upload failed for Book {submission.BookNumber}: {megaEx.Message}");
+                        $"MEGA upload failed for '{fileName}': {megaEx.Message}");
                 }
 
-                // ── Step 4: Confirm to user
+                if (_cts.Token.IsCancellationRequested) return;
+
                 string megaInfo = uploaded
                     ? $"\nMEGA link:\n{megaLink}"
-                    : "\n⚠ MEGA upload failed — record saved to database only.";
+                    : "\n⚠ MEGA upload failed — record saved locally only.";
 
                 MessageBox.Show(
-                    $"Book {submission.BookNumber} submitted!\n\n" +
-                    $"Notary  : {submission.NotaryName}\n"  +
-                    $"PTR     : {submission.PtrNumber}\n"   +
-                    $"File    : {submission.FileName}\n"    +
-                    $"Status  : Pending review."            +
+                    $"Document submitted successfully!\n\n" +
+                    $"File     : {fileName}\n"             +
+                    $"Year     : {submission.YearCovered}\n" +
+                    $"Commission: {submission.DateOfCommission}\n" +
+                    $"Status   : Pending review."          +
                     megaInfo,
                     "Submitted", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
@@ -205,14 +265,12 @@ namespace LegalOfficeApp
             }
             finally
             {
+                _uploading        = false;
                 btnSubmit.Enabled = true;
+                if (cancelBtn != null) cancelBtn.Visible = false;
+                _cts?.Dispose();
+                _cts = null;
             }
-        }
-
-        private void SaveDraft_Click(object sender, EventArgs e)
-        {
-            MessageBox.Show("Draft saved. You can return to complete this submission.",
-                "Draft Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         // ── Helpers ───────────────────────────────────────────────
@@ -238,10 +296,10 @@ namespace LegalOfficeApp
 
         private TextBox Field(TableLayoutPanel grid, string label, int row, int col)
         {
-            var wrap = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(4, 4, 10, 0) };
-            var lbl  = new Label { Text = label, Dock = DockStyle.Top, Height = 18, Font = new Font("Segoe UI", 8f), ForeColor = Color.FromArgb(100, 100, 100) };
-            var border = new Panel { Dock = DockStyle.Top, Height = 28, BackColor = Color.FromArgb(200, 200, 220), Padding = new Padding(1) };
-            var tb = new TextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 10f), BackColor = Color.White, ForeColor = Color.FromArgb(20, 20, 20), TabStop = true };
+            var wrap   = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(4, 4, 10, 0) };
+            var lbl    = new Label { Text = label, Dock = DockStyle.Top, Height = 18, Font = new Font("Segoe UI", 8f), ForeColor = Color.FromArgb(100, 100, 100) };
+            var border = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = Color.FromArgb(200, 200, 220), Padding = new Padding(1) };
+            var tb     = new TextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 10f), BackColor = Color.White, ForeColor = Color.FromArgb(20, 20, 20) };
             lbl.Click  += (s, e) => tb.Focus();
             wrap.Click += (s, e) => tb.Focus();
             border.Controls.Add(tb);
@@ -255,7 +313,7 @@ namespace LegalOfficeApp
         {
             var wrap = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(4, 4, 10, 0) };
             var lbl  = new Label { Text = label, Dock = DockStyle.Top, Height = 18, Font = new Font("Segoe UI", 8f), ForeColor = Color.FromArgb(100, 100, 100) };
-            dtpCommission = new DateTimePicker { Dock = DockStyle.Top, Format = DateTimePickerFormat.Short, Value = DateTime.Now, Font = new Font("Segoe UI", 10f), Height = 28 };
+            dtpCommission = new DateTimePicker { Dock = DockStyle.Top, Format = DateTimePickerFormat.Short, Value = DateTime.Now, Font = new Font("Segoe UI", 10f), Height = 34 };
             wrap.Controls.Add(dtpCommission);
             wrap.Controls.Add(lbl);
             grid.Controls.Add(wrap, col, row);
@@ -273,14 +331,15 @@ namespace LegalOfficeApp
         {
             var p = (Panel)sender;
             var g = e.Graphics;
-            using var pen = new Pen(Color.FromArgb(170, 170, 210), 1.5f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
-            g.DrawRectangle(pen, 2, 2, p.Width - 5, p.Height - 5);
+            using var pen = new System.Drawing.Drawing2D.GraphicsPath();
+            using var dashPen = new Pen(Color.FromArgb(170, 170, 210), 1.5f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+            g.DrawRectangle(dashPen, 2, 2, p.Width - 5, p.Height - 5);
             using var fIcon = new Font("Segoe UI", 18f);
             using var fTxt  = new Font("Segoe UI", 9f);
             using var br    = new SolidBrush(Color.FromArgb(130, 130, 160));
             string icon = "📄"; var isz = g.MeasureString(icon, fIcon);
             g.DrawString(icon, fIcon, br, (p.Width - isz.Width) / 2f, 8f);
-            string msg = "Click to browse or drag & drop PDF here"; var msz = g.MeasureString(msg, fTxt);
+            string msg = "Click to browse PDF"; var msz = g.MeasureString(msg, fTxt);
             g.DrawString(msg, fTxt, br, (p.Width - msz.Width) / 2f, isz.Height + 10f);
         }
 
@@ -298,8 +357,7 @@ namespace LegalOfficeApp
 
         private void ClearForm()
         {
-            txtName.Clear(); txtPTR.Clear(); txtIBP.Clear();
-            txtBookNo.Clear(); txtYear.Clear();
+            txtYear.Clear();
             dtpCommission.Value   = DateTime.Now;
             attachedFilePath      = "";
             lblAttachedFile.Text      = "No file selected.";

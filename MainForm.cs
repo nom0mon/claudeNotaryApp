@@ -1,24 +1,28 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using System.IO;
 
 namespace LegalOfficeApp
 {
     public partial class MainForm : Form
     {
+        // Set to true when user clicks Sign Out (vs closing the window)
+        public static bool RestartAfterSignOut { get; set; } = false;
+
         private readonly Color Navy      = Color.FromArgb(10, 26, 107);
         private readonly Color NavyHover = Color.FromArgb(20, 40, 130);
         private readonly Color BgGray    = Color.FromArgb(240, 240, 240);
 
         private Panel  panelMenu;
         private Label  logo;
-        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs, btnSignOut;
+        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs;
+        private Button btnSignOut, btnAddStaff;
         private Button _activeBtn;
 
-        // Full text and icon-only text for each nav button
         private readonly string[] _fullText = {
             "   Dashboard",
-            "   Notarial Submission",
+            "   Document Submission",
             "   Submission Tracking",
             "   Activity Logs"
         };
@@ -48,21 +52,15 @@ namespace LegalOfficeApp
             BackColor     = BgGray;
             Font          = new Font("Segoe UI", 9f);
 
-            // Instantiate pages first
             ucDashboard  = new DashboardControl  { Dock = DockStyle.Fill };
             ucSubmission = new SubmissionControl  { Dock = DockStyle.Fill };
             ucTracking   = new TrackingControl    { Dock = DockStyle.Fill };
             ucLogs       = new LogsControl        { Dock = DockStyle.Fill };
 
-            // WinForms docking rule:
-            //   Controls are docked in REVERSE z-order (last added = processed first).
-            //   So: add Fill/content controls FIRST (they are processed last, taking leftover space).
-            //       add Left/Right/Top sidebar controls LAST (processed first, reserving their strip).
-            BuildContentArea();  // adds panelContent (Fill) and topBar (Top) — processed LAST
-            BuildSidebar();      // adds panelMenu (Left) — processed FIRST, strips its width before Fill runs
+            BuildContentArea();
+            BuildSidebar();
         }
 
-        // ── Sidebar ──────────────────────────────────────────────────
         private void BuildSidebar()
         {
             panelMenu = new Panel
@@ -71,11 +69,7 @@ namespace LegalOfficeApp
                 Width     = 210,
                 BackColor = Navy
             };
-            // panelMenu is added to this.Controls at the END of this method
-            // so it is processed FIRST by the dock engine (reserves its left strip
-            // before the Fill panel takes the remainder).
 
-            // Hamburger at top
             btnNavIcon = new Button
             {
                 Text      = "≡",
@@ -93,7 +87,6 @@ namespace LegalOfficeApp
             btnNavIcon.FlatAppearance.MouseOverBackColor = NavyHover;
             btnNavIcon.Click += (s, e) => CollapseMenu();
 
-            // Logo
             logo = new Label
             {
                 Text      = "LEGAL OFFICE\nCALAMBA CITY",
@@ -105,31 +98,58 @@ namespace LegalOfficeApp
                 Padding   = new Padding(8)
             };
 
-            // Nav buttons
+            bool isAdmin = SessionManager.IsAdmin;
+            var lblRole = new Label
+            {
+                Text      = isAdmin ? "🔑  Administrator" : "👤  Staff",
+                ForeColor = isAdmin
+                    ? Color.FromArgb(200, 220, 255)
+                    : Color.FromArgb(180, 180, 200),
+                Font      = new Font("Segoe UI", 7.5f),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Dock      = DockStyle.Top,
+                Height    = 22
+            };
+
             btnDashboard  = NavBtn(_fullText[0]);
             btnSubmission = NavBtn(_fullText[1]);
             btnTracking   = NavBtn(_fullText[2]);
             btnLogs       = NavBtn(_fullText[3]);
-            btnSignOut    = NavBtn("   Sign Out");
-            btnSignOut.Dock = DockStyle.Bottom;
 
             btnDashboard .Click += (s, e) => OpenPage(ucDashboard,  btnDashboard,  "DASHBOARD");
             btnSubmission.Click += (s, e) => OpenPage(ucSubmission, btnSubmission, "NOTARIAL BOOK SUBMISSION");
             btnTracking  .Click += (s, e) => OpenPage(ucTracking,   btnTracking,   "SUBMISSION TRACKING");
             btnLogs      .Click += (s, e) => OpenPage(ucLogs,       btnLogs,       "ACTIVITY LOGS");
-            btnSignOut   .Click += (s, e) => { if (Confirm("Sign out?")) Application.Exit(); };
 
-            // Children: Bottom first, then Top items in reverse visual order
+            btnTracking.Visible = isAdmin;
+            btnLogs    .Visible = isAdmin;
+
+            // Bottom buttons
+            btnSignOut = BottomBtn("   Sign Out", Navy);
+            btnSignOut.Click += SignOut_Click;
+
+            btnAddStaff = BottomBtn("   + Add Staff / Admin", Color.FromArgb(20, 40, 130));
+            btnAddStaff.Visible = isAdmin;
+            btnAddStaff.Click  += AddStaff_Click;
+
+            var divider = new Panel
+            {
+                Dock      = DockStyle.Bottom,
+                Height    = 1,
+                BackColor = Color.FromArgb(40, 255, 255, 255)
+            };
+
             panelMenu.Controls.Add(btnSignOut);
+            panelMenu.Controls.Add(btnAddStaff);
+            panelMenu.Controls.Add(divider);
             panelMenu.Controls.Add(btnLogs);
             panelMenu.Controls.Add(btnTracking);
             panelMenu.Controls.Add(btnSubmission);
             panelMenu.Controls.Add(btnDashboard);
+            panelMenu.Controls.Add(lblRole);
             panelMenu.Controls.Add(logo);
             panelMenu.Controls.Add(btnNavIcon);
 
-            // Add sidebar to form LAST — dock engine processes higher z-order controls first,
-            // so adding last = processed first = strips its 210px before Fill takes the rest.
             this.Controls.Add(panelMenu);
         }
 
@@ -156,10 +176,28 @@ namespace LegalOfficeApp
             return btn;
         }
 
-        // ── Content area ─────────────────────────────────────────────
+        private Button BottomBtn(string text, Color bg)
+        {
+            var btn = new Button
+            {
+                Text      = text,
+                Dock      = DockStyle.Bottom,
+                Height    = 44,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = bg,
+                ForeColor = Color.FromArgb(200, 200, 200),
+                Font      = new Font("Segoe UI", 9.5f),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding   = new Padding(14, 0, 0, 0),
+                Cursor    = Cursors.Hand
+            };
+            btn.FlatAppearance.BorderSize         = 0;
+            btn.FlatAppearance.MouseOverBackColor = NavyHover;
+            return btn;
+        }
+
         private void BuildContentArea()
         {
-            // Top bar
             var topBar = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Color.White };
 
             lblPageTitle = new Label
@@ -172,20 +210,22 @@ namespace LegalOfficeApp
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding   = new Padding(16, 0, 0, 0)
             };
+
+            string roleTag = SessionManager.IsAdmin ? " [Admin]" : " [Staff]";
             var lblUser = new Label
             {
-                Text      = $"👤  {SessionManager.Current?.FullName ?? "User"}",
+                Text      = $"👤  {SessionManager.Current?.FullName ?? "User"}{roleTag}",
                 Font      = new Font("Segoe UI", 9f),
                 ForeColor = Color.FromArgb(80, 80, 80),
                 Dock      = DockStyle.Right,
-                Width     = 160,
+                Width     = 220,
                 TextAlign = ContentAlignment.MiddleRight,
                 Padding   = new Padding(0, 0, 16, 0)
             };
+
             var border = new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = Color.FromArgb(220, 220, 220) };
             topBar.Controls.AddRange(new Control[] { border, lblUser, lblPageTitle });
 
-            // Content panel — Fill must be added AFTER sidebar in Controls
             panelContent = new Panel
             {
                 Dock      = DockStyle.Fill,
@@ -193,23 +233,16 @@ namespace LegalOfficeApp
                 Padding   = new Padding(16)
             };
 
-            // Add Fill first, then Top.
-            // WinForms dock order: last-added control has lowest z-order = processed first by dock engine.
-            // We want: Top bar processed after Fill so it sits above it.
-            // Both content controls must be in Controls BEFORE the sidebar (added in BuildSidebar)
-            // so the sidebar (Left) is processed before them and strips its width correctly.
-            this.Controls.Add(panelContent);  // Fill — processed last, takes remaining space
-            this.Controls.Add(topBar);        // Top  — processed before Fill, takes top strip
+            this.Controls.Add(panelContent);
+            this.Controls.Add(topBar);
         }
 
-        // ── Navigation ───────────────────────────────────────────────
         private void OpenPage(UserControl page, Button btn, string title)
         {
             panelContent.Controls.Clear();
             panelContent.Controls.Add(page);
             lblPageTitle.Text = title;
 
-            // Refresh data from DB whenever a page is opened
             if (page is DashboardControl  db) db.RefreshData();
             if (page is TrackingControl   tr) tr.RefreshData();
             if (page is LogsControl       lg) lg.RefreshData();
@@ -219,12 +252,29 @@ namespace LegalOfficeApp
                 _activeBtn.BackColor = Navy;
                 _activeBtn.ForeColor = Color.FromArgb(200, 200, 200);
             }
-            _activeBtn           = btn;
-            btn.BackColor        = Color.FromArgb(20, 40, 130);
-            btn.ForeColor        = Color.White;
+            _activeBtn    = btn;
+            btn.BackColor = Color.FromArgb(20, 40, 130);
+            btn.ForeColor = Color.White;
         }
 
-        // ── Collapse / Expand ─────────────────────────────────────────
+        private void SignOut_Click(object? sender, EventArgs e)
+        {
+            if (MessageBox.Show("Sign out and return to login?", "Sign Out",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            RestartAfterSignOut = true;
+            this.Close();
+        }
+
+        private void AddStaff_Click(object? sender, EventArgs e)
+        {
+            var dlg = new SignupForm();
+            dlg.ShowDialog(this);
+            if (panelContent.Controls.Count > 0 && panelContent.Controls[0] is LogsControl lg)
+                lg.RefreshData();
+        }
+
         private void CollapseMenu()
         {
             bool expanded = panelMenu.Width > 80;
@@ -232,8 +282,9 @@ namespace LegalOfficeApp
 
             if (expanded)
             {
-                panelMenu.Width = 56;
-                logo.Visible    = false;
+                panelMenu.Width     = 56;
+                logo.Visible        = false;
+                btnAddStaff.Visible = false;
 
                 for (int i = 0; i < navBtns.Length; i++)
                 {
@@ -252,8 +303,9 @@ namespace LegalOfficeApp
             }
             else
             {
-                panelMenu.Width = 210;
-                logo.Visible    = true;
+                panelMenu.Width     = 210;
+                logo.Visible        = true;
+                btnAddStaff.Visible = SessionManager.IsAdmin;
 
                 for (int i = 0; i < navBtns.Length; i++)
                 {
@@ -271,9 +323,6 @@ namespace LegalOfficeApp
                 btnNavIcon.Padding   = new Padding(14, 0, 0, 0);
             }
         }
-
-        private bool Confirm(string msg) =>
-            MessageBox.Show(msg, "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
 
         private void InitializeComponent()
         {

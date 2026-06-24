@@ -118,8 +118,61 @@ namespace LegalOfficeApp
             ";
             cmd.ExecuteNonQuery();
 
+            // Migrate existing columns that might be missing the NOT NULL DEFAULT
+            MigrateSchema(conn);
+
             // Seed default admin account if no users exist
             SeedDefaultAdmin(conn);
+        }
+
+        /// <summary>
+        /// Applies any schema fixes needed for databases created before column defaults were set.
+        /// SQLite doesn't support ALTER COLUMN, so we use UPDATE to fix existing NULLs.
+        /// </summary>
+        private void MigrateSchema(SqliteConnection conn)
+        {
+            var nullFixes = new (string table, string column)[]
+            {
+                ("ActivityLogs", "User"),
+                ("ActivityLogs", "Action"),
+                ("ActivityLogs", "Details"),
+                ("ActivityLogs", "Timestamp"),
+                ("Submissions",  "BookNumber"),
+                ("Submissions",  "NotaryName"),
+                ("Submissions",  "PtrNumber"),
+                ("Submissions",  "IbpNumber"),
+                ("Submissions",  "DateOfCommission"),
+                ("Submissions",  "YearCovered"),
+                ("Submissions",  "LocalFilePath"),
+                ("Submissions",  "MegaLink"),
+                ("Submissions",  "FileName"),
+                ("Submissions",  "Status"),
+                ("Submissions",  "Remarks"),
+                ("Submissions",  "SubmittedBy"),
+                ("Submissions",  "ReviewedBy"),
+            };
+
+            foreach (var (table, column) in nullFixes)
+            {
+                using var fix = conn.CreateCommand();
+                fix.CommandText = $"UPDATE {table} SET {column} = '' WHERE {column} IS NULL;";
+                fix.ExecuteNonQuery();
+            }
+
+            // Fix NULL Timestamp in ActivityLogs specifically
+            using var fixTs = conn.CreateCommand();
+            fixTs.CommandText = "UPDATE ActivityLogs SET Timestamp = datetime('now') WHERE Timestamp IS NULL OR Timestamp = '';";
+            fixTs.ExecuteNonQuery();
+
+            // Fix NULL DateSubmitted in Submissions
+            using var fixDs = conn.CreateCommand();
+            fixDs.CommandText = "UPDATE Submissions SET DateSubmitted = datetime('now') WHERE DateSubmitted IS NULL OR DateSubmitted = '';";
+            fixDs.ExecuteNonQuery();
+
+            // Fix NULL Status in Submissions
+            using var fixSt = conn.CreateCommand();
+            fixSt.CommandText = "UPDATE Submissions SET Status = 'Pending' WHERE Status IS NULL OR Status = '';";
+            fixSt.ExecuteNonQuery();
         }
 
         private void SeedDefaultAdmin(SqliteConnection conn)
@@ -154,17 +207,17 @@ namespace LegalOfficeApp
             using var r = cmd.ExecuteReader();
             if (!r.Read()) return null;
 
-            string storedHash = r.GetString(2);
+            string storedHash = r.IsDBNull(2) ? "" : r.GetString(2);
             if (storedHash != HashPassword(password)) return null;
 
             return new AppUser
             {
                 Id           = r.GetInt32(0),
-                Username     = r.GetString(1),
+                Username     = r.IsDBNull(1) ? "" : r.GetString(1),
                 PasswordHash = storedHash,
-                Role         = r.GetString(3),
-                FullName     = r.GetString(4),
-                IsActive     = r.GetInt32(5) == 1
+                Role         = r.IsDBNull(3) ? "Staff" : r.GetString(3),
+                FullName     = r.IsDBNull(4) ? "" : r.GetString(4),
+                IsActive     = !r.IsDBNull(5) && r.GetInt32(5) == 1
             };
         }
 
@@ -272,24 +325,35 @@ namespace LegalOfficeApp
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
+                // Parse DateSubmitted safely
+                DateTime dateSubmitted = DateTime.Now;
+                if (!r.IsDBNull(13))
+                {
+                    var raw = r.GetString(13);
+                    if (!string.IsNullOrWhiteSpace(raw))
+                        DateTime.TryParse(raw, out dateSubmitted);
+                }
+
                 list.Add(new Submission
                 {
                     Id               = r.GetInt32(0),
-                    BookNumber       = r.GetString(1),
-                    NotaryName       = r.GetString(2),
-                    PtrNumber        = r.GetString(3),
-                    IbpNumber        = r.GetString(4),
-                    DateOfCommission = r.GetString(5),
-                    YearCovered      = r.GetString(6),
-                    LocalFilePath    = r.GetString(7),
-                    MegaLink         = r.GetString(8),
-                    FileName         = r.GetString(9),
-                    Status           = r.GetString(10),
-                    Remarks          = r.GetString(11),
-                    SubmittedBy      = r.GetString(12),
-                    DateSubmitted    = DateTime.Parse(r.GetString(13)),
-                    DateReviewed     = r.IsDBNull(14) ? null : DateTime.Parse(r.GetString(14)),
-                    ReviewedBy       = r.GetString(15)
+                    BookNumber       = r.IsDBNull(1)  ? "" : r.GetString(1),
+                    NotaryName       = r.IsDBNull(2)  ? "" : r.GetString(2),
+                    PtrNumber        = r.IsDBNull(3)  ? "" : r.GetString(3),
+                    IbpNumber        = r.IsDBNull(4)  ? "" : r.GetString(4),
+                    DateOfCommission = r.IsDBNull(5)  ? "" : r.GetString(5),
+                    YearCovered      = r.IsDBNull(6)  ? "" : r.GetString(6),
+                    LocalFilePath    = r.IsDBNull(7)  ? "" : r.GetString(7),
+                    MegaLink         = r.IsDBNull(8)  ? "" : r.GetString(8),
+                    FileName         = r.IsDBNull(9)  ? "" : r.GetString(9),
+                    Status           = r.IsDBNull(10) ? "Pending" : r.GetString(10),
+                    Remarks          = r.IsDBNull(11) ? "" : r.GetString(11),
+                    SubmittedBy      = r.IsDBNull(12) ? "" : r.GetString(12),
+                    DateSubmitted    = dateSubmitted,
+                    DateReviewed     = r.IsDBNull(14)
+                                           ? null
+                                           : (DateTime.TryParse(r.GetString(14), out var dr) ? dr : (DateTime?)null),
+                    ReviewedBy       = r.IsDBNull(15) ? "" : r.GetString(15)
                 });
             }
             return list;
@@ -308,7 +372,12 @@ namespace LegalOfficeApp
                 FROM Submissions;";
             using var r = cmd.ExecuteReader();
             if (!r.Read()) return (0, 0, 0, 0);
-            return (r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3));
+            return (
+                r.IsDBNull(0) ? 0 : r.GetInt32(0),
+                r.IsDBNull(1) ? 0 : r.GetInt32(1),
+                r.IsDBNull(2) ? 0 : r.GetInt32(2),
+                r.IsDBNull(3) ? 0 : r.GetInt32(3)
+            );
         }
 
         public int[] GetMonthlySubmissions(int year)
@@ -326,8 +395,9 @@ namespace LegalOfficeApp
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                int month = int.Parse(r.GetString(0)) - 1;
-                counts[month] = r.GetInt32(1);
+                if (r.IsDBNull(0)) continue;
+                if (int.TryParse(r.GetString(0), out int month) && month >= 1 && month <= 12)
+                    counts[month - 1] = r.IsDBNull(1) ? 0 : r.GetInt32(1);
             }
             return counts;
         }
@@ -343,9 +413,9 @@ namespace LegalOfficeApp
             cmd.CommandText = @"
                 INSERT INTO ActivityLogs (User, Action, Details, Timestamp)
                 VALUES (@u, @a, @d, @t);";
-            cmd.Parameters.AddWithValue("@u", user);
-            cmd.Parameters.AddWithValue("@a", action);
-            cmd.Parameters.AddWithValue("@d", details);
+            cmd.Parameters.AddWithValue("@u", user    ?? "");
+            cmd.Parameters.AddWithValue("@a", action  ?? "");
+            cmd.Parameters.AddWithValue("@d", details ?? "");
             cmd.Parameters.AddWithValue("@t", DateTime.Now.ToString("o"));
             cmd.ExecuteNonQuery();
         }
@@ -381,13 +451,22 @@ namespace LegalOfficeApp
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
+                // Parse timestamp safely
+                DateTime ts = DateTime.Now;
+                if (!r.IsDBNull(4))
+                {
+                    var raw = r.GetString(4);
+                    if (!string.IsNullOrWhiteSpace(raw))
+                        DateTime.TryParse(raw, out ts);
+                }
+
                 list.Add(new ActivityLog
                 {
                     Id        = r.GetInt32(0),
-                    User      = r.GetString(1),
-                    Action    = r.GetString(2),
-                    Details   = r.GetString(3),
-                    Timestamp = DateTime.Parse(r.GetString(4))
+                    User      = r.IsDBNull(1) ? "" : r.GetString(1),
+                    Action    = r.IsDBNull(2) ? "" : r.GetString(2),
+                    Details   = r.IsDBNull(3) ? "" : r.GetString(3),
+                    Timestamp = ts
                 });
             }
             return list;

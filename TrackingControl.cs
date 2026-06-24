@@ -33,7 +33,7 @@ namespace LegalOfficeApp
 
             txtSearch = new TextBox
             {
-                PlaceholderText = "Search notary name...",
+                PlaceholderText = "Search file name...",
                 Width           = 220,
                 Height          = 28,
                 Font            = new Font("Segoe UI", 9.5f),
@@ -92,25 +92,39 @@ namespace LegalOfficeApp
             dgv.ColumnHeadersHeight                     = 36;
             dgv.ColumnHeadersHeightSizeMode             = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
 
-            // Hidden column to store submission ID
+            // Hidden ID column
             dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "Id", Visible = false });
-            dgv.Columns.Add("BookNo",    "Book #");
-            dgv.Columns.Add("Notary",    "Notary Name");
-            dgv.Columns.Add("PTR",       "PTR No.");
-            dgv.Columns.Add("Submitted", "Date Submitted");
-            dgv.Columns.Add("Status",    "Status");
+            dgv.Columns.Add("FileName",   "File Name");
+            dgv.Columns.Add("Commission", "Date of Commission");
+            dgv.Columns.Add("Year",       "Year Covered");
+            dgv.Columns.Add("Submitted",  "Date Submitted");
+            dgv.Columns.Add("SubmittedBy","Submitted By");
+            dgv.Columns.Add("Status",     "Status");
+            dgv.Columns.Add("Remarks",    "Remarks");
 
-            var btnCol = new DataGridViewButtonColumn
+            // Column widths
+            dgv.Columns["Commission"].FillWeight = 14;
+            dgv.Columns["Year"]      .FillWeight = 10;
+            dgv.Columns["Submitted"] .FillWeight = 14;
+            dgv.Columns["SubmittedBy"].FillWeight = 14;
+            dgv.Columns["Status"]    .FillWeight = 10;
+            dgv.Columns["Remarks"]   .FillWeight = 18;
+
+            // Action button — admin only
+            if (SessionManager.IsAdmin)
             {
-                Name       = "Action",
-                HeaderText = "Action",
-                Text       = "View / Review",
-                UseColumnTextForButtonValue = true,
-                FlatStyle  = FlatStyle.Flat,
-                Width      = 110
-            };
-            dgv.Columns.Add(btnCol);
-            dgv.Columns["Action"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+                var btnCol = new DataGridViewButtonColumn
+                {
+                    Name       = "Action",
+                    HeaderText = "Action",
+                    Text       = "Review",
+                    UseColumnTextForButtonValue = true,
+                    FlatStyle  = FlatStyle.Flat,
+                    Width      = 90
+                };
+                dgv.Columns.Add(btnCol);
+                dgv.Columns["Action"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            }
 
             dgv.CellFormatting += Dgv_CellFormatting;
             dgv.CellClick      += Dgv_CellClick;
@@ -122,34 +136,42 @@ namespace LegalOfficeApp
             this.HandleCreated += (s, e) => ApplyFilter();
         }
 
-        // ── Pull from DB with optional filters ───────────────────
         private void ApplyFilter()
         {
             string search = txtSearch?.Text.Trim() ?? "";
             string status = cboStatus?.SelectedItem?.ToString() ?? "All Status";
 
             string? statusFilter = status == "All Status" ? null : status;
-            string? nameSearch   = string.IsNullOrEmpty(search) ? null : search;
+            // Search by file name instead of notary name
+            string? nameSearch = string.IsNullOrEmpty(search) ? null : search;
 
-            var submissions = DatabaseService.Instance.GetSubmissions(statusFilter, nameSearch);
+            // Get all submissions, filter client-side by filename
+            var submissions = DatabaseService.Instance.GetSubmissions(statusFilter);
 
             dgv.Rows.Clear();
             foreach (var s in submissions)
             {
+                // Filter by filename search
+                if (nameSearch != null &&
+                    !s.FileName.Contains(nameSearch, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string remarks = string.IsNullOrEmpty(s.Remarks) ? "—" : s.Remarks;
                 dgv.Rows.Add(
                     s.Id,
-                    s.BookNumber,
-                    s.NotaryName,
-                    s.PtrNumber,
+                    s.FileName,
+                    s.DateOfCommission,
+                    s.YearCovered,
                     s.DateSubmitted.ToString("MMM dd, yyyy"),
-                    s.Status);
+                    s.SubmittedBy,
+                    s.Status,
+                    remarks);
             }
 
             if (dgv.Rows.Count == 0)
-                dgv.Rows.Add(0, "—", "No records found", "—", "—", "—");
+                dgv.Rows.Add(0, "No records found", "—", "—", "—", "—", "—", "—");
         }
 
-        // ── Cell formatting ───────────────────────────────────────
         private void Dgv_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
         {
             if (e.ColumnIndex != dgv.Columns["Status"].Index || e.Value == null) return;
@@ -171,74 +193,93 @@ namespace LegalOfficeApp
             e.CellStyle.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
         }
 
-        // ── Row action button ──────────────────────────────────────
         private void Dgv_CellClick(object? sender, DataGridViewCellEventArgs e)
         {
-            if (e.RowIndex < 0 || e.ColumnIndex != dgv.Columns["Action"].Index) return;
+            if (e.RowIndex < 0) return;
 
             int    id     = Convert.ToInt32(dgv.Rows[e.RowIndex].Cells["Id"].Value);
-            string bookNo = dgv.Rows[e.RowIndex].Cells["BookNo"].Value?.ToString() ?? "";
-            string status = dgv.Rows[e.RowIndex].Cells["Status"].Value?.ToString()  ?? "";
+            string status = dgv.Rows[e.RowIndex].Cells["Status"].Value?.ToString() ?? "";
+            string file   = dgv.Rows[e.RowIndex].Cells["FileName"].Value?.ToString() ?? "";
+            if (id == 0) return;
 
-            if (id == 0) return;   // empty-state row
+            bool isActionCol = SessionManager.IsAdmin &&
+                               dgv.Columns.Contains("Action") &&
+                               e.ColumnIndex == dgv.Columns["Action"].Index;
 
-            if (status == "Pending" && SessionManager.IsAdmin)
+            if (isActionCol)
             {
-                var dlg = new ApprovalDialog(bookNo);
-                if (dlg.ShowDialog() == DialogResult.OK)
+                // ── Admin: approve or reject pending submissions ──
+                if (status == "Pending")
                 {
-                    string newStatus = dlg.Approved ? "Approved" : "Rejected";
-                    string reviewer  = SessionManager.Current?.FullName ?? "Admin";
+                    var dlg = new ApprovalDialog(file);
+                    if (dlg.ShowDialog() == DialogResult.OK)
+                    {
+                        string newStatus = dlg.Approved ? "Approved" : "Rejected";
+                        string reviewer  = SessionManager.Current?.FullName ?? "Admin";
 
-                    DatabaseService.Instance.ReviewSubmission(id, newStatus, dlg.Remarks, reviewer);
-                    DatabaseService.Instance.InsertLog(
-                        reviewer, newStatus == "Approved" ? "Approval" : "Rejection",
-                        $"{newStatus} Book {bookNo}");
+                        DatabaseService.Instance.ReviewSubmission(id, newStatus, dlg.Remarks, reviewer);
+                        DatabaseService.Instance.InsertLog(
+                            reviewer,
+                            newStatus == "Approved" ? "Approval" : "Rejection",
+                            $"{newStatus} '{file}'");
 
-                    ApplyFilter();   // refresh grid from DB
+                        ApplyFilter();
+                    }
+                }
+                else
+                {
+                    // Already reviewed — show details only
+                    ShowDetails(id);
                 }
             }
             else
             {
-                // Show details dialog
-                var submissions = DatabaseService.Instance.GetSubmissions();
-                var sub         = submissions.Find(x => x.Id == id);
-                if (sub == null) return;
-
-                string info =
-                    $"Book #  : {sub.BookNumber}\n"        +
-                    $"Notary  : {sub.NotaryName}\n"        +
-                    $"PTR     : {sub.PtrNumber}\n"         +
-                    $"IBP     : {sub.IbpNumber}\n"         +
-                    $"Year    : {sub.YearCovered}\n"       +
-                    $"File    : {sub.FileName}\n"          +
-                    $"Status  : {sub.Status}\n"            +
-                    $"Remarks : {sub.Remarks}\n\n"         +
-                    (string.IsNullOrEmpty(sub.MegaLink)
-                        ? "No MEGA link available."
-                        : $"MEGA Link:\n{sub.MegaLink}");
-
-                MessageBox.Show(info, $"Submission Details — {sub.BookNumber}",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                // Any column click → show details
+                ShowDetails(id);
             }
         }
 
-        // ── Export ─────────────────────────────────────────────────
+        private void ShowDetails(int id)
+        {
+            var all = DatabaseService.Instance.GetSubmissions();
+            var sub = all.Find(x => x.Id == id);
+            if (sub == null) return;
+
+            string info =
+                $"File Name    : {sub.FileName}\n"          +
+                $"Commission   : {sub.DateOfCommission}\n"  +
+                $"Year Covered : {sub.YearCovered}\n"       +
+                $"Submitted By : {sub.SubmittedBy}\n"       +
+                $"Date         : {sub.DateSubmitted:MMM dd, yyyy h:mm tt}\n" +
+                $"Status       : {sub.Status}\n"            +
+                $"Remarks      : {(string.IsNullOrEmpty(sub.Remarks) ? "—" : sub.Remarks)}\n" +
+                $"Reviewed By  : {(string.IsNullOrEmpty(sub.ReviewedBy) ? "—" : sub.ReviewedBy)}\n\n" +
+                (string.IsNullOrEmpty(sub.MegaLink)
+                    ? "No MEGA link available."
+                    : $"MEGA Link:\n{sub.MegaLink}");
+
+            MessageBox.Show(info, $"Submission Details — {sub.FileName}",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
         private void Export_Click(object? sender, EventArgs e)
         {
             using var dlg = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "submissions.csv" };
             if (dlg.ShowDialog() != DialogResult.OK) return;
             using var sw  = new StreamWriter(dlg.FileName);
-            sw.WriteLine("ID,Book #,Notary Name,PTR No.,Date Submitted,Status,MEGA Link");
+            sw.WriteLine("ID,File Name,Date of Commission,Year Covered,Date Submitted,Submitted By,Status,Remarks");
             foreach (DataGridViewRow row in dgv.Rows)
             {
                 if (row.IsNewRow) continue;
-                sw.WriteLine($"{row.Cells["Id"].Value}," +
-                             $"{row.Cells["BookNo"].Value}," +
-                             $"{row.Cells["Notary"].Value}," +
-                             $"{row.Cells["PTR"].Value}," +
-                             $"{row.Cells["Submitted"].Value}," +
-                             $"{row.Cells["Status"].Value}");
+                sw.WriteLine(
+                    $"{row.Cells["Id"].Value}," +
+                    $"\"{row.Cells["FileName"].Value}\"," +
+                    $"{row.Cells["Commission"].Value}," +
+                    $"{row.Cells["Year"].Value}," +
+                    $"{row.Cells["Submitted"].Value}," +
+                    $"\"{row.Cells["SubmittedBy"].Value}\"," +
+                    $"{row.Cells["Status"].Value}," +
+                    $"\"{row.Cells["Remarks"].Value}\"");
             }
             MessageBox.Show("Exported successfully.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -267,36 +308,69 @@ namespace LegalOfficeApp
         public string Remarks  { get; private set; } = "";
         private TextBox txtRemarks;
 
-        public ApprovalDialog(string bookNo)
+        public ApprovalDialog(string fileName)
         {
-            Text            = $"Review — {bookNo}";
-            Size            = new Size(380, 230);
+            Text            = $"Review — {fileName}";
+            Size            = new Size(400, 260);
             StartPosition   = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox     = false;
             Font            = new Font("Segoe UI", 9.5f);
+            BackColor       = Color.White;
 
-            var lbl = new Label { Text = $"Remarks for {bookNo} (optional):", Location = new Point(16, 16), Size = new Size(340, 20) };
-            txtRemarks  = new TextBox { Multiline = true, Location = new Point(16, 40), Size = new Size(340, 70), Font = new Font("Segoe UI", 9.5f) };
+            var lbl = new Label
+            {
+                Text     = $"File: {fileName}",
+                Location = new Point(16, 16),
+                Size     = new Size(360, 18),
+                Font     = new Font("Segoe UI", 9f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(30, 30, 30)
+            };
 
-            var btnApprove = Btn("✔  Approve", Color.FromArgb(58, 96, 18));
-            var btnReject  = Btn("✖  Reject",  Color.FromArgb(163, 45, 45));
-            var btnCancel  = Btn("Cancel",      Color.FromArgb(90, 90, 90));
+            var lblR = new Label
+            {
+                Text      = "Remarks (optional):",
+                Location  = new Point(16, 40),
+                AutoSize  = true,
+                ForeColor = Color.FromArgb(80, 80, 80)
+            };
 
-            btnApprove.Location = new Point(16,  124);
-            btnReject .Location = new Point(136, 124);
-            btnCancel .Location = new Point(256, 124);
+            txtRemarks = new TextBox
+            {
+                Multiline = true,
+                Location  = new Point(16, 62),
+                Size      = new Size(360, 70),
+                Font      = new Font("Segoe UI", 9.5f),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+
+            var btnApprove = ActionBtn("✔  Approve", Color.FromArgb(58, 96, 18));
+            var btnReject  = ActionBtn("✖  Reject",  Color.FromArgb(163, 45, 45));
+            var btnCancel  = ActionBtn("Cancel",      Color.FromArgb(90, 90, 90));
+
+            btnApprove.Location = new Point(16,  148);
+            btnReject .Location = new Point(140, 148);
+            btnCancel .Location = new Point(264, 148);
 
             btnApprove.Click += (s, e) => { Approved = true;  Remarks = txtRemarks.Text; DialogResult = DialogResult.OK;     Close(); };
             btnReject .Click += (s, e) => { Approved = false; Remarks = txtRemarks.Text; DialogResult = DialogResult.OK;     Close(); };
             btnCancel .Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
 
-            Controls.AddRange(new Control[] { lbl, txtRemarks, btnApprove, btnReject, btnCancel });
+            Controls.AddRange(new Control[] { lbl, lblR, txtRemarks, btnApprove, btnReject, btnCancel });
         }
 
-        private Button Btn(string text, Color bg)
+        private Button ActionBtn(string text, Color bg)
         {
-            var b = new Button { Text = text, Size = new Size(110, 34), FlatStyle = FlatStyle.Flat, BackColor = bg, ForeColor = Color.White, Cursor = Cursors.Hand };
+            var b = new Button
+            {
+                Text      = text,
+                Size      = new Size(114, 36),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = bg,
+                ForeColor = Color.White,
+                Cursor    = Cursors.Hand,
+                Font      = new Font("Segoe UI", 9.5f)
+            };
             b.FlatAppearance.BorderSize = 0;
             return b;
         }
