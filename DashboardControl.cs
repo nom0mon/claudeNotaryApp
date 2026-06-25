@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
+using System.Collections.Generic;
 
 namespace LegalOfficeApp
 {
@@ -18,6 +19,8 @@ namespace LegalOfficeApp
         private int[] chartData = new int[12];
         private FlowLayoutPanel notifStack;
         private DataGridView dgvRecent;
+
+        
 
         public DashboardControl()
         {

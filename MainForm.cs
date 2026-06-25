@@ -19,11 +19,10 @@ namespace LegalOfficeApp
 
         private Panel  panelMenu;
         private Label  logo;
-        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs, btnUsers, btnSignOut, btnAddStaff;
+        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs, btnUsers, btnSignOut;
         private Label lblRole;
         private Button _activeBtn;
 
-        // FIX (root cause #6): "User Management" added as a 5th nav entry, admin-only.
         private readonly string[] _fullText = {
             "⊞   Dashboard",
             "↑   Notarial Submission",
@@ -156,11 +155,9 @@ namespace LegalOfficeApp
             btnUsers.Visible = isAdmin;
 
             // Bottom buttons
-            btnAddStaff = BottomBtn("+   Add Staff / Admin", Color.FromArgb(20, 40, 130));
+           
             btnSignOut  = BottomBtn("→   Sign Out", Navy);
             btnSignOut.Click += SignOut_Click;
-            btnAddStaff.Visible = isAdmin;
-            btnAddStaff.Click  += AddStaff_Click;
 
             var divider = new Panel
             {
@@ -169,7 +166,6 @@ namespace LegalOfficeApp
                 BackColor = Color.FromArgb(40, 255, 255, 255)
             };
 
-            panelMenu.Controls.Add(btnAddStaff);
             panelMenu.Controls.Add(btnSignOut);
             panelMenu.Controls.Add(divider);
             panelMenu.Controls.Add(btnUsers);
@@ -220,10 +216,6 @@ namespace LegalOfficeApp
             var dlg = new SignupForm();
             dlg.ShowDialog(this);
 
-            // FIX: previously only refreshed LogsControl if it happened to be the open
-            // page. UserManagementControl is now a reachable page too, so refresh it as
-            // well if it's the one currently displayed — otherwise a newly-created account
-            // wouldn't appear until the admin manually navigated away and back.
             if (panelContent.Controls.Count > 0)
             {
                 if (panelContent.Controls[0] is LogsControl lg) lg.RefreshData();
@@ -336,7 +328,6 @@ if (expanded)
                     navBtns[i].TextAlign = ContentAlignment.MiddleCenter;
                     navBtns[i].Padding   = new Padding(0);
                 }
-                btnAddStaff.Text     = "+";
                 btnSignOut.Text      = "→";
                 btnSignOut.Font      = new Font("Segoe UI", 14f);
                 btnSignOut.TextAlign = ContentAlignment.MiddleCenter;
@@ -357,7 +348,6 @@ else
                     navBtns[i].TextAlign = ContentAlignment.MiddleLeft;
                     navBtns[i].Padding   = new Padding(14, 0, 0, 0);
                 }
-                btnAddStaff.Text     = "+   Add Staff / Admin";
                 btnSignOut.Text      = "→   Sign Out";
                 btnSignOut.Font      = new Font("Segoe UI", 9.5f);
                 btnSignOut.TextAlign = ContentAlignment.MiddleLeft;
