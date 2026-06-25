@@ -11,31 +11,35 @@ namespace LegalOfficeApp
 
     public class Submission
     {
-        public int    Id              { get; set; }
-        public string BookNumber      { get; set; } = "";
-        public string NotaryName      { get; set; } = "";
-        public string PtrNumber       { get; set; } = "";
-        public string IbpNumber       { get; set; } = "";
-        public string DateOfCommission{ get; set; } = "";
-        public string YearCovered     { get; set; } = "";
-        public string LocalFilePath   { get; set; } = "";
-        public string MegaLink        { get; set; } = "";
-        public string FileName        { get; set; } = "";
-        public string Status          { get; set; } = "Pending";   // Pending / Approved / Rejected
-        public string Remarks         { get; set; } = "";
-        public string SubmittedBy     { get; set; } = "";
-        public DateTime DateSubmitted { get; set; } = DateTime.Now;
-        public DateTime? DateReviewed { get; set; }
-        public string ReviewedBy      { get; set; } = "";
+        public int      Id               { get; set; }
+        public string   BookNumber       { get; set; } = "";
+        public string   NotaryName       { get; set; } = "";
+        public string   PtrNumber        { get; set; } = "";
+        public string   IbpNumber        { get; set; } = "";
+        public string   DateOfCommission { get; set; } = "";
+        public string   YearCovered      { get; set; } = "";
+        public string   LocalFilePath    { get; set; } = "";
+        public string   MegaLink         { get; set; } = "";
+        public string   FileName         { get; set; } = "";
+        public string   Status           { get; set; } = "Pending";
+        public string   Remarks          { get; set; } = "";
+        public string   SubmittedBy      { get; set; } = "";
+        public DateTime DateSubmitted    { get; set; } = DateTime.Now;
+        public DateTime? DateReviewed   { get; set; }
+        public string   ReviewedBy       { get; set; } = "";
+        // Firestore document ID for cross-device sync
+        public string   FirestoreId      { get; set; } = "";
     }
 
     public class ActivityLog
     {
-        public int    Id        { get; set; }
-        public string User      { get; set; } = "";
-        public string Action    { get; set; } = "";   // Login / Submission / Approval / Rejection
-        public string Details   { get; set; } = "";
+        public int      Id        { get; set; }
+        public string   User      { get; set; } = "";
+        public string   Action    { get; set; } = "";
+        public string   Details   { get; set; } = "";
         public DateTime Timestamp { get; set; } = DateTime.Now;
+        // "file" | "account" — used to filter activity for non-admin users
+        public string   Category  { get; set; } = "file";
     }
 
     public class AppUser
@@ -43,7 +47,7 @@ namespace LegalOfficeApp
         public int    Id           { get; set; }
         public string Username     { get; set; } = "";
         public string PasswordHash { get; set; } = "";
-        public string Role         { get; set; } = "Staff";   // Admin / Staff
+        public string Role         { get; set; } = "Staff";
         public string FullName     { get; set; } = "";
         public bool   IsActive     { get; set; } = true;
     }
@@ -54,20 +58,18 @@ namespace LegalOfficeApp
 
     public class DatabaseService
     {
-        // DB file sits next to the executable
         private static readonly string DbPath =
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "legaloffice.db");
 
         private static string ConnStr => $"Data Source={DbPath};";
 
-        // ── Singleton ─────────────────────────────────────────
         private static DatabaseService? _instance;
         public  static DatabaseService  Instance =>
             _instance ??= new DatabaseService();
 
         private DatabaseService() { }
 
-        // ── Initialise (call once on app start) ───────────────
+        // ── Initialise ────────────────────────────────────────
         public void Initialize()
         {
             using var conn = Open();
@@ -77,7 +79,6 @@ namespace LegalOfficeApp
                 PRAGMA journal_mode = WAL;
                 PRAGMA foreign_keys = ON;
 
-                -- Users table
                 CREATE TABLE IF NOT EXISTS Users (
                     Id           INTEGER PRIMARY KEY AUTOINCREMENT,
                     Username     TEXT    NOT NULL UNIQUE,
@@ -87,7 +88,6 @@ namespace LegalOfficeApp
                     IsActive     INTEGER NOT NULL DEFAULT 1
                 );
 
-                -- Submissions table
                 CREATE TABLE IF NOT EXISTS Submissions (
                     Id               INTEGER PRIMARY KEY AUTOINCREMENT,
                     BookNumber       TEXT    NOT NULL,
@@ -104,75 +104,44 @@ namespace LegalOfficeApp
                     SubmittedBy      TEXT    NOT NULL DEFAULT '',
                     DateSubmitted    TEXT    NOT NULL,
                     DateReviewed     TEXT,
-                    ReviewedBy       TEXT    NOT NULL DEFAULT ''
+                    ReviewedBy       TEXT    NOT NULL DEFAULT '',
+                    FirestoreId      TEXT    NOT NULL DEFAULT ''
                 );
 
-                -- Activity logs table
                 CREATE TABLE IF NOT EXISTS ActivityLogs (
                     Id        INTEGER PRIMARY KEY AUTOINCREMENT,
                     User      TEXT    NOT NULL,
                     Action    TEXT    NOT NULL,
                     Details   TEXT    NOT NULL DEFAULT '',
-                    Timestamp TEXT    NOT NULL
+                    Timestamp TEXT    NOT NULL,
+                    Category  TEXT    NOT NULL DEFAULT 'file'
                 );
             ";
             cmd.ExecuteNonQuery();
 
-            // Migrate existing columns that might be missing the NOT NULL DEFAULT
+            // Migrate: add columns if upgrading from old schema
             MigrateSchema(conn);
-
-            // Seed default admin account if no users exist
             SeedDefaultAdmin(conn);
         }
 
-        /// <summary>
-        /// Applies any schema fixes needed for databases created before column defaults were set.
-        /// SQLite doesn't support ALTER COLUMN, so we use UPDATE to fix existing NULLs.
-        /// </summary>
+        // Safely add new columns to existing databases (idempotent)
         private void MigrateSchema(SqliteConnection conn)
         {
-            var nullFixes = new (string table, string column)[]
+            var migrations = new[]
             {
-                ("ActivityLogs", "User"),
-                ("ActivityLogs", "Action"),
-                ("ActivityLogs", "Details"),
-                ("ActivityLogs", "Timestamp"),
-                ("Submissions",  "BookNumber"),
-                ("Submissions",  "NotaryName"),
-                ("Submissions",  "PtrNumber"),
-                ("Submissions",  "IbpNumber"),
-                ("Submissions",  "DateOfCommission"),
-                ("Submissions",  "YearCovered"),
-                ("Submissions",  "LocalFilePath"),
-                ("Submissions",  "MegaLink"),
-                ("Submissions",  "FileName"),
-                ("Submissions",  "Status"),
-                ("Submissions",  "Remarks"),
-                ("Submissions",  "SubmittedBy"),
-                ("Submissions",  "ReviewedBy"),
+                "ALTER TABLE Submissions   ADD COLUMN FirestoreId TEXT NOT NULL DEFAULT '';",
+                "ALTER TABLE ActivityLogs  ADD COLUMN Category    TEXT NOT NULL DEFAULT 'file';"
             };
-
-            foreach (var (table, column) in nullFixes)
+            foreach (var sql in migrations)
             {
-                using var fix = conn.CreateCommand();
-                fix.CommandText = $"UPDATE {table} SET {column} = '' WHERE {column} IS NULL;";
-                fix.ExecuteNonQuery();
+                try
+                {
+                    using var m = conn.CreateCommand();
+                    m.CommandText = sql;
+                    m.ExecuteNonQuery();
+                }
+                catch { /* column already exists — ignore */ }
             }
-
-            // Fix NULL Timestamp in ActivityLogs specifically
-            using var fixTs = conn.CreateCommand();
-            fixTs.CommandText = "UPDATE ActivityLogs SET Timestamp = datetime('now') WHERE Timestamp IS NULL OR Timestamp = '';";
-            fixTs.ExecuteNonQuery();
-
-            // Fix NULL DateSubmitted in Submissions
-            using var fixDs = conn.CreateCommand();
-            fixDs.CommandText = "UPDATE Submissions SET DateSubmitted = datetime('now') WHERE DateSubmitted IS NULL OR DateSubmitted = '';";
-            fixDs.ExecuteNonQuery();
-
-            // Fix NULL Status in Submissions
-            using var fixSt = conn.CreateCommand();
-            fixSt.CommandText = "UPDATE Submissions SET Status = 'Pending' WHERE Status IS NULL OR Status = '';";
-            fixSt.ExecuteNonQuery();
         }
 
         private void SeedDefaultAdmin(SqliteConnection conn)
@@ -200,24 +169,22 @@ namespace LegalOfficeApp
             using var cmd  = conn.CreateCommand();
             cmd.CommandText = @"
                 SELECT Id, Username, PasswordHash, Role, FullName, IsActive
-                FROM Users
-                WHERE Username = @u AND IsActive = 1;";
+                FROM Users WHERE Username = @u AND IsActive = 1;";
             cmd.Parameters.AddWithValue("@u", username);
 
             using var r = cmd.ExecuteReader();
             if (!r.Read()) return null;
-
-            string storedHash = r.IsDBNull(2) ? "" : r.GetString(2);
+            string storedHash = r.GetString(2);
             if (storedHash != HashPassword(password)) return null;
 
             return new AppUser
             {
                 Id           = r.GetInt32(0),
-                Username     = r.IsDBNull(1) ? "" : r.GetString(1),
+                Username     = r.GetString(1),
                 PasswordHash = storedHash,
-                Role         = r.IsDBNull(3) ? "Staff" : r.GetString(3),
-                FullName     = r.IsDBNull(4) ? "" : r.GetString(4),
-                IsActive     = !r.IsDBNull(5) && r.GetInt32(5) == 1
+                Role         = r.GetString(3),
+                FullName     = r.GetString(4),
+                IsActive     = r.GetInt32(5) == 1
             };
         }
 
@@ -235,6 +202,63 @@ namespace LegalOfficeApp
             cmd.ExecuteNonQuery();
         }
 
+        /// <summary>Returns all users (for admin management screen).</summary>
+        public List<AppUser> GetAllUsers()
+        {
+            using var conn = Open();
+            using var cmd  = conn.CreateCommand();
+            cmd.CommandText = "SELECT Id, Username, Role, FullName, IsActive FROM Users ORDER BY Id;";
+            var list = new List<AppUser>();
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                list.Add(new AppUser
+                {
+                    Id       = r.GetInt32(0),
+                    Username = r.GetString(1),
+                    Role     = r.GetString(2),
+                    FullName = r.GetString(3),
+                    IsActive = r.GetInt32(4) == 1
+                });
+            }
+            return list;
+        }
+
+        /// <summary>Update a user's role and full name (admin only).</summary>
+        public void UpdateUser(int id, string fullName, string role, bool isActive)
+        {
+            using var conn = Open();
+            using var cmd  = conn.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE Users SET FullName = @f, Role = @r, IsActive = @a WHERE Id = @id;";
+            cmd.Parameters.AddWithValue("@f",  fullName);
+            cmd.Parameters.AddWithValue("@r",  role);
+            cmd.Parameters.AddWithValue("@a",  isActive ? 1 : 0);
+            cmd.Parameters.AddWithValue("@id", id);
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>Deactivate (soft-delete) a user account.</summary>
+        public void DeactivateUser(int id)
+        {
+            using var conn = Open();
+            using var cmd  = conn.CreateCommand();
+            cmd.CommandText = "UPDATE Users SET IsActive = 0 WHERE Id = @id;";
+            cmd.Parameters.AddWithValue("@id", id);
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>Change a user's password.</summary>
+        public void ChangePassword(int id, string newPlainPassword)
+        {
+            using var conn = Open();
+            using var cmd  = conn.CreateCommand();
+            cmd.CommandText = "UPDATE Users SET PasswordHash = @h WHERE Id = @id;";
+            cmd.Parameters.AddWithValue("@h",  HashPassword(newPlainPassword));
+            cmd.Parameters.AddWithValue("@id", id);
+            cmd.ExecuteNonQuery();
+        }
+
         // ════════════════════════════════════════════════════════
         //  SUBMISSIONS
         // ════════════════════════════════════════════════════════
@@ -247,11 +271,11 @@ namespace LegalOfficeApp
                 INSERT INTO Submissions
                     (BookNumber, NotaryName, PtrNumber, IbpNumber,
                      DateOfCommission, YearCovered, LocalFilePath,
-                     MegaLink, FileName, Status, SubmittedBy, DateSubmitted)
+                     MegaLink, FileName, Status, SubmittedBy, DateSubmitted, FirestoreId)
                 VALUES
                     (@bn, @nn, @ptr, @ibp,
                      @doc, @yr, @lfp,
-                     @ml, @fn, 'Pending', @sb, @ds);
+                     @ml, @fn, 'Pending', @sb, @ds, @fid);
                 SELECT last_insert_rowid();";
 
             cmd.Parameters.AddWithValue("@bn",  s.BookNumber);
@@ -265,6 +289,7 @@ namespace LegalOfficeApp
             cmd.Parameters.AddWithValue("@fn",  s.FileName);
             cmd.Parameters.AddWithValue("@sb",  s.SubmittedBy);
             cmd.Parameters.AddWithValue("@ds",  s.DateSubmitted.ToString("o"));
+            cmd.Parameters.AddWithValue("@fid", s.FirestoreId);
 
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
@@ -275,6 +300,50 @@ namespace LegalOfficeApp
             using var cmd  = conn.CreateCommand();
             cmd.CommandText = "UPDATE Submissions SET MegaLink = @ml WHERE Id = @id;";
             cmd.Parameters.AddWithValue("@ml", megaLink);
+            cmd.Parameters.AddWithValue("@id", id);
+            cmd.ExecuteNonQuery();
+        }
+
+        public void UpdateSubmissionFirestoreId(int id, string firestoreId)
+        {
+            using var conn = Open();
+            using var cmd  = conn.CreateCommand();
+            cmd.CommandText = "UPDATE Submissions SET FirestoreId = @fid WHERE Id = @id;";
+            cmd.Parameters.AddWithValue("@fid", firestoreId);
+            cmd.Parameters.AddWithValue("@id",  id);
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>Update editable submission fields (before approval).</summary>
+        public void UpdateSubmission(Submission s)
+        {
+            using var conn = Open();
+            using var cmd  = conn.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE Submissions
+                SET BookNumber       = @bn,
+                    NotaryName       = @nn,
+                    PtrNumber        = @ptr,
+                    IbpNumber        = @ibp,
+                    DateOfCommission = @doc,
+                    YearCovered      = @yr
+                WHERE Id = @id;";
+            cmd.Parameters.AddWithValue("@bn",  s.BookNumber);
+            cmd.Parameters.AddWithValue("@nn",  s.NotaryName);
+            cmd.Parameters.AddWithValue("@ptr", s.PtrNumber);
+            cmd.Parameters.AddWithValue("@ibp", s.IbpNumber);
+            cmd.Parameters.AddWithValue("@doc", s.DateOfCommission);
+            cmd.Parameters.AddWithValue("@yr",  s.YearCovered);
+            cmd.Parameters.AddWithValue("@id",  s.Id);
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>Permanently delete a submission record (admin only).</summary>
+        public void DeleteSubmission(int id)
+        {
+            using var conn = Open();
+            using var cmd  = conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM Submissions WHERE Id = @id;";
             cmd.Parameters.AddWithValue("@id", id);
             cmd.ExecuteNonQuery();
         }
@@ -317,7 +386,7 @@ namespace LegalOfficeApp
                 SELECT Id, BookNumber, NotaryName, PtrNumber, IbpNumber,
                        DateOfCommission, YearCovered, LocalFilePath,
                        MegaLink, FileName, Status, Remarks,
-                       SubmittedBy, DateSubmitted, DateReviewed, ReviewedBy
+                       SubmittedBy, DateSubmitted, DateReviewed, ReviewedBy, FirestoreId
                 FROM Submissions {where}
                 ORDER BY DateSubmitted DESC;";
 
@@ -325,35 +394,25 @@ namespace LegalOfficeApp
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                // Parse DateSubmitted safely
-                DateTime dateSubmitted = DateTime.Now;
-                if (!r.IsDBNull(13))
-                {
-                    var raw = r.GetString(13);
-                    if (!string.IsNullOrWhiteSpace(raw))
-                        DateTime.TryParse(raw, out dateSubmitted);
-                }
-
                 list.Add(new Submission
                 {
                     Id               = r.GetInt32(0),
-                    BookNumber       = r.IsDBNull(1)  ? "" : r.GetString(1),
-                    NotaryName       = r.IsDBNull(2)  ? "" : r.GetString(2),
-                    PtrNumber        = r.IsDBNull(3)  ? "" : r.GetString(3),
-                    IbpNumber        = r.IsDBNull(4)  ? "" : r.GetString(4),
-                    DateOfCommission = r.IsDBNull(5)  ? "" : r.GetString(5),
-                    YearCovered      = r.IsDBNull(6)  ? "" : r.GetString(6),
-                    LocalFilePath    = r.IsDBNull(7)  ? "" : r.GetString(7),
-                    MegaLink         = r.IsDBNull(8)  ? "" : r.GetString(8),
-                    FileName         = r.IsDBNull(9)  ? "" : r.GetString(9),
-                    Status           = r.IsDBNull(10) ? "Pending" : r.GetString(10),
-                    Remarks          = r.IsDBNull(11) ? "" : r.GetString(11),
-                    SubmittedBy      = r.IsDBNull(12) ? "" : r.GetString(12),
-                    DateSubmitted    = dateSubmitted,
-                    DateReviewed     = r.IsDBNull(14)
-                                           ? null
-                                           : (DateTime.TryParse(r.GetString(14), out var dr) ? dr : (DateTime?)null),
-                    ReviewedBy       = r.IsDBNull(15) ? "" : r.GetString(15)
+                    BookNumber       = r.GetString(1),
+                    NotaryName       = r.GetString(2),
+                    PtrNumber        = r.GetString(3),
+                    IbpNumber        = r.GetString(4),
+                    DateOfCommission = r.GetString(5),
+                    YearCovered      = r.GetString(6),
+                    LocalFilePath    = r.GetString(7),
+                    MegaLink         = r.GetString(8),
+                    FileName         = r.GetString(9),
+                    Status           = r.GetString(10),
+                    Remarks          = r.GetString(11),
+                    SubmittedBy      = r.GetString(12),
+                    DateSubmitted    = DateTime.Parse(r.GetString(13)),
+                    DateReviewed     = r.IsDBNull(14) ? null : DateTime.Parse(r.GetString(14)),
+                    ReviewedBy       = r.GetString(15),
+                    FirestoreId      = r.IsDBNull(16) ? "" : r.GetString(16)
                 });
             }
             return list;
@@ -364,20 +423,14 @@ namespace LegalOfficeApp
             using var conn = Open();
             using var cmd  = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT
-                    COUNT(*),
-                    SUM(CASE WHEN Status = 'Pending'  THEN 1 ELSE 0 END),
-                    SUM(CASE WHEN Status = 'Approved' THEN 1 ELSE 0 END),
-                    SUM(CASE WHEN Status = 'Rejected' THEN 1 ELSE 0 END)
+                SELECT COUNT(*),
+                       SUM(CASE WHEN Status = 'Pending'  THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN Status = 'Approved' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN Status = 'Rejected' THEN 1 ELSE 0 END)
                 FROM Submissions;";
             using var r = cmd.ExecuteReader();
             if (!r.Read()) return (0, 0, 0, 0);
-            return (
-                r.IsDBNull(0) ? 0 : r.GetInt32(0),
-                r.IsDBNull(1) ? 0 : r.GetInt32(1),
-                r.IsDBNull(2) ? 0 : r.GetInt32(2),
-                r.IsDBNull(3) ? 0 : r.GetInt32(3)
-            );
+            return (r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3));
         }
 
         public int[] GetMonthlySubmissions(int year)
@@ -395,9 +448,8 @@ namespace LegalOfficeApp
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                if (r.IsDBNull(0)) continue;
-                if (int.TryParse(r.GetString(0), out int month) && month >= 1 && month <= 12)
-                    counts[month - 1] = r.IsDBNull(1) ? 0 : r.GetInt32(1);
+                int month = int.Parse(r.GetString(0)) - 1;
+                counts[month] = r.GetInt32(1);
             }
             return counts;
         }
@@ -406,21 +458,34 @@ namespace LegalOfficeApp
         //  ACTIVITY LOGS
         // ════════════════════════════════════════════════════════
 
-        public void InsertLog(string user, string action, string details)
+        /// <summary>
+        /// category: "file"    – submission / approval / rejection events  (visible to all)
+        ///           "account" – user creation / deactivation events        (admin only)
+        /// </summary>
+        public void InsertLog(string user, string action, string details,
+                              string category = "file")
         {
             using var conn = Open();
             using var cmd  = conn.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO ActivityLogs (User, Action, Details, Timestamp)
-                VALUES (@u, @a, @d, @t);";
-            cmd.Parameters.AddWithValue("@u", user    ?? "");
-            cmd.Parameters.AddWithValue("@a", action  ?? "");
-            cmd.Parameters.AddWithValue("@d", details ?? "");
+                INSERT INTO ActivityLogs (User, Action, Details, Timestamp, Category)
+                VALUES (@u, @a, @d, @t, @c);";
+            cmd.Parameters.AddWithValue("@u", user);
+            cmd.Parameters.AddWithValue("@a", action);
+            cmd.Parameters.AddWithValue("@d", details);
             cmd.Parameters.AddWithValue("@t", DateTime.Now.ToString("o"));
+            cmd.Parameters.AddWithValue("@c", category);
             cmd.ExecuteNonQuery();
         }
 
-        public List<ActivityLog> GetLogs(string? actionFilter = null, DateTime? from = null, DateTime? to = null)
+        /// <summary>
+        /// Returns logs filtered by action, date range, and optionally category.
+        /// Pass categoryFilter = "file" for staff view; null to see everything (admin).
+        /// </summary>
+        public List<ActivityLog> GetLogs(string? actionFilter  = null,
+                                         DateTime? from        = null,
+                                         DateTime? to          = null,
+                                         string?   categoryFilter = null)
         {
             using var conn = Open();
             using var cmd  = conn.CreateCommand();
@@ -441,9 +506,14 @@ namespace LegalOfficeApp
                 where += " AND Timestamp <= @to";
                 cmd.Parameters.AddWithValue("@to", to.Value.AddDays(1).ToString("o"));
             }
+            if (!string.IsNullOrEmpty(categoryFilter))
+            {
+                where += " AND Category = @cat";
+                cmd.Parameters.AddWithValue("@cat", categoryFilter);
+            }
 
             cmd.CommandText = $@"
-                SELECT Id, User, Action, Details, Timestamp
+                SELECT Id, User, Action, Details, Timestamp, Category
                 FROM ActivityLogs {where}
                 ORDER BY Timestamp DESC;";
 
@@ -451,22 +521,14 @@ namespace LegalOfficeApp
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                // Parse timestamp safely
-                DateTime ts = DateTime.Now;
-                if (!r.IsDBNull(4))
-                {
-                    var raw = r.GetString(4);
-                    if (!string.IsNullOrWhiteSpace(raw))
-                        DateTime.TryParse(raw, out ts);
-                }
-
                 list.Add(new ActivityLog
                 {
                     Id        = r.GetInt32(0),
-                    User      = r.IsDBNull(1) ? "" : r.GetString(1),
-                    Action    = r.IsDBNull(2) ? "" : r.GetString(2),
-                    Details   = r.IsDBNull(3) ? "" : r.GetString(3),
-                    Timestamp = ts
+                    User      = r.GetString(1),
+                    Action    = r.GetString(2),
+                    Details   = r.GetString(3),
+                    Timestamp = DateTime.Parse(r.GetString(4)),
+                    Category  = r.IsDBNull(5) ? "file" : r.GetString(5)
                 });
             }
             return list;
@@ -483,7 +545,6 @@ namespace LegalOfficeApp
             return conn;
         }
 
-        // Simple SHA-256 password hash (swap for BCrypt in production)
         public static string HashPassword(string plain)
         {
             using var sha = System.Security.Cryptography.SHA256.Create();

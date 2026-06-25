@@ -13,14 +13,16 @@ namespace LegalOfficeApp
         public static void Login(AppUser user)
         {
             Current = user;
-            // Log the login event
-            DatabaseService.Instance.InsertLog(user.FullName, "Login", "Logged into the system");
+            // Login is a file-category event — visible to all users in the logs
+            DatabaseService.Instance.InsertLog(
+                user.FullName, "Login", "Logged into the system", "file");
         }
 
         public static void Logout()
         {
             if (Current != null)
-                DatabaseService.Instance.InsertLog(Current.FullName, "Logout", "Logged out of the system");
+                DatabaseService.Instance.InsertLog(
+                    Current.FullName, "Logout", "Logged out of the system", "file");
             Current = null;
         }
     }

@@ -178,6 +178,19 @@ namespace LegalOfficeApp
 
                 int newId = DatabaseService.Instance.InsertSubmission(submission);
 
+                try
+                {
+                    string firestoreId = await FirestoreService.Instance.AddSubmissionAsync(submission);
+                    DatabaseService.Instance.UpdateSubmissionFirestoreId(newId, firestoreId);
+                }
+                catch (Exception fsEx)
+                {
+                    // Firestore failure is non-fatal — local record is already saved
+                    DatabaseService.Instance.InsertLog(
+                        submission.SubmittedBy, "Warning",
+                        $"Firestore sync failed for Book {submission.BookNumber}: {fsEx.Message}", "file");
+                }
+
                 DatabaseService.Instance.InsertLog(
                     submission.SubmittedBy, "Submission",
                     $"Submitted '{fileName}' for year {submission.YearCovered} (ID: {newId})");

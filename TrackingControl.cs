@@ -33,7 +33,7 @@ namespace LegalOfficeApp
 
             txtSearch = new TextBox
             {
-                PlaceholderText = "Search file name...",
+                PlaceholderText = "Search notary name...",
                 Width           = 220,
                 Height          = 28,
                 Font            = new Font("Segoe UI", 9.5f),
@@ -94,37 +94,50 @@ namespace LegalOfficeApp
 
             // Hidden ID column
             dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "Id", Visible = false });
-            dgv.Columns.Add("FileName",   "File Name");
-            dgv.Columns.Add("Commission", "Date of Commission");
-            dgv.Columns.Add("Year",       "Year Covered");
-            dgv.Columns.Add("Submitted",  "Date Submitted");
-            dgv.Columns.Add("SubmittedBy","Submitted By");
-            dgv.Columns.Add("Status",     "Status");
-            dgv.Columns.Add("Remarks",    "Remarks");
+            dgv.Columns.Add("BookNo",    "Book #");
+            dgv.Columns.Add("Notary",    "Notary Name");
+            dgv.Columns.Add("PTR",       "PTR No.");
+            dgv.Columns.Add("Submitted", "Date Submitted");
+            dgv.Columns.Add("Status",    "Status");
 
-            // Column widths
-            dgv.Columns["Commission"].FillWeight = 14;
-            dgv.Columns["Year"]      .FillWeight = 10;
-            dgv.Columns["Submitted"] .FillWeight = 14;
-            dgv.Columns["SubmittedBy"].FillWeight = 14;
-            dgv.Columns["Status"]    .FillWeight = 10;
-            dgv.Columns["Remarks"]   .FillWeight = 18;
-
-            // Action button — admin only
-            if (SessionManager.IsAdmin)
+            // ── Action button (View / Review) ─────────────────
+            var btnViewCol = new DataGridViewButtonColumn
             {
-                var btnCol = new DataGridViewButtonColumn
-                {
-                    Name       = "Action",
-                    HeaderText = "Action",
-                    Text       = "Review",
-                    UseColumnTextForButtonValue = true,
-                    FlatStyle  = FlatStyle.Flat,
-                    Width      = 90
-                };
-                dgv.Columns.Add(btnCol);
-                dgv.Columns["Action"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
-            }
+                Name       = "Action",
+                HeaderText = "Review",
+                Text       = "View / Review",
+                UseColumnTextForButtonValue = true,
+                FlatStyle  = FlatStyle.Flat,
+                Width      = 110
+            };
+            dgv.Columns.Add(btnViewCol);
+            dgv.Columns["Action"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+
+            // ── Edit button (admin + pending only) ────────────
+            var btnEditCol = new DataGridViewButtonColumn
+            {
+                Name       = "Edit",
+                HeaderText = "Edit",
+                Text       = "✎ Edit",
+                UseColumnTextForButtonValue = true,
+                FlatStyle  = FlatStyle.Flat,
+                Width      = 72
+            };
+            dgv.Columns.Add(btnEditCol);
+            dgv.Columns["Edit"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+
+            // ── Delete button (admin only) ────────────────────
+            var btnDelCol = new DataGridViewButtonColumn
+            {
+                Name       = "Delete",
+                HeaderText = "Delete",
+                Text       = "🗑 Del",
+                UseColumnTextForButtonValue = true,
+                FlatStyle  = FlatStyle.Flat,
+                Width      = 72
+            };
+            dgv.Columns.Add(btnDelCol);
+            dgv.Columns["Delete"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
 
             dgv.CellFormatting += Dgv_CellFormatting;
             dgv.CellClick      += Dgv_CellClick;
@@ -136,150 +149,209 @@ namespace LegalOfficeApp
             this.HandleCreated += (s, e) => ApplyFilter();
         }
 
+        // ── Pull from DB ──────────────────────────────────────────
         private void ApplyFilter()
         {
             string search = txtSearch?.Text.Trim() ?? "";
             string status = cboStatus?.SelectedItem?.ToString() ?? "All Status";
 
             string? statusFilter = status == "All Status" ? null : status;
-            // Search by file name instead of notary name
-            string? nameSearch = string.IsNullOrEmpty(search) ? null : search;
+            string? nameSearch   = string.IsNullOrEmpty(search) ? null : search;
 
-            // Get all submissions, filter client-side by filename
-            var submissions = DatabaseService.Instance.GetSubmissions(statusFilter);
+            var submissions = DatabaseService.Instance.GetSubmissions(statusFilter, nameSearch);
+            bool isAdmin    = SessionManager.IsAdmin;
 
             dgv.Rows.Clear();
             foreach (var s in submissions)
             {
-                // Filter by filename search
-                if (nameSearch != null &&
-                    !s.FileName.Contains(nameSearch, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string remarks = string.IsNullOrEmpty(s.Remarks) ? "—" : s.Remarks;
-                dgv.Rows.Add(
+                int idx = dgv.Rows.Add(
                     s.Id,
-                    s.FileName,
-                    s.DateOfCommission,
-                    s.YearCovered,
+                    s.BookNumber,
+                    s.NotaryName,
+                    s.PtrNumber,
                     s.DateSubmitted.ToString("MMM dd, yyyy"),
-                    s.SubmittedBy,
-                    s.Status,
-                    remarks);
+                    s.Status);
+
+                // Show Edit/Delete only to admins; hide for non-admin staff
+                if (!isAdmin)
+                {
+                    dgv.Rows[idx].Cells["Edit"]  .Value = "";
+                    dgv.Rows[idx].Cells["Delete"].Value = "";
+                }
             }
 
             if (dgv.Rows.Count == 0)
-                dgv.Rows.Add(0, "No records found", "—", "—", "—", "—", "—", "—");
+                dgv.Rows.Add(0, "—", "No records found", "—", "—", "—");
         }
 
+        // ── Cell formatting ────────────────────────────────────────
         private void Dgv_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
         {
-            if (e.ColumnIndex != dgv.Columns["Status"].Index || e.Value == null) return;
-            switch (e.Value.ToString())
+            if (e.ColumnIndex == dgv.Columns["Status"].Index && e.Value != null)
             {
-                case "Pending":
-                    e.CellStyle.ForeColor = Color.FromArgb(133, 79, 11);
-                    e.CellStyle.BackColor = Color.FromArgb(250, 238, 218);
-                    break;
-                case "Approved":
-                    e.CellStyle.ForeColor = Color.FromArgb(58, 109, 17);
-                    e.CellStyle.BackColor = Color.FromArgb(234, 243, 222);
-                    break;
-                case "Rejected":
-                    e.CellStyle.ForeColor = Color.FromArgb(163, 45, 45);
-                    e.CellStyle.BackColor = Color.FromArgb(252, 235, 235);
-                    break;
+                switch (e.Value.ToString())
+                {
+                    case "Pending":
+                        e.CellStyle.ForeColor = Color.FromArgb(133, 79, 11);
+                        e.CellStyle.BackColor = Color.FromArgb(250, 238, 218);
+                        break;
+                    case "Approved":
+                        e.CellStyle.ForeColor = Color.FromArgb(58, 109, 17);
+                        e.CellStyle.BackColor = Color.FromArgb(234, 243, 222);
+                        break;
+                    case "Rejected":
+                        e.CellStyle.ForeColor = Color.FromArgb(163, 45, 45);
+                        e.CellStyle.BackColor = Color.FromArgb(252, 235, 235);
+                        break;
+                }
+                e.CellStyle.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
             }
-            e.CellStyle.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+
+            // Style Edit button
+            if (e.ColumnIndex == dgv.Columns["Edit"].Index)
+            {
+                e.CellStyle.BackColor = Color.FromArgb(230, 241, 251);
+                e.CellStyle.ForeColor = Color.FromArgb(24, 95, 165);
+            }
+
+            // Style Delete button
+            if (e.ColumnIndex == dgv.Columns["Delete"].Index)
+            {
+                e.CellStyle.BackColor = Color.FromArgb(252, 235, 235);
+                e.CellStyle.ForeColor = Color.FromArgb(163, 45, 45);
+            }
         }
 
+        // ── Cell click handler ────────────────────────────────────
         private void Dgv_CellClick(object? sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
 
             int    id     = Convert.ToInt32(dgv.Rows[e.RowIndex].Cells["Id"].Value);
+            string bookNo = dgv.Rows[e.RowIndex].Cells["BookNo"].Value?.ToString() ?? "";
             string status = dgv.Rows[e.RowIndex].Cells["Status"].Value?.ToString() ?? "";
-            string file   = dgv.Rows[e.RowIndex].Cells["FileName"].Value?.ToString() ?? "";
+
             if (id == 0) return;
 
-            bool isActionCol = SessionManager.IsAdmin &&
-                               dgv.Columns.Contains("Action") &&
-                               e.ColumnIndex == dgv.Columns["Action"].Index;
-
-            if (isActionCol)
+            // ── VIEW / REVIEW ──────────────────────────────────
+            if (e.ColumnIndex == dgv.Columns["Action"].Index)
             {
-                // ── Admin: approve or reject pending submissions ──
-                if (status == "Pending")
+                if (status == "Pending" && SessionManager.IsAdmin)
                 {
-                    var dlg = new ApprovalDialog(file);
+                    var dlg = new ApprovalDialog(bookNo);
                     if (dlg.ShowDialog() == DialogResult.OK)
                     {
                         string newStatus = dlg.Approved ? "Approved" : "Rejected";
                         string reviewer  = SessionManager.Current?.FullName ?? "Admin";
 
                         DatabaseService.Instance.ReviewSubmission(id, newStatus, dlg.Remarks, reviewer);
+                        var subs = DatabaseService.Instance.GetSubmissions();
+                        var sub  = subs.Find(x => x.Id == id);
+                        if (sub != null && !string.IsNullOrEmpty(sub.FirestoreId))
+                        {
+                            _ = FirestoreService.Instance.UpdateStatusAsync(
+                                sub.FirestoreId, newStatus, dlg.Remarks, reviewer);
+                        }
+                        
                         DatabaseService.Instance.InsertLog(
                             reviewer,
                             newStatus == "Approved" ? "Approval" : "Rejection",
-                            $"{newStatus} '{file}'");
+                            $"{newStatus} Book {bookNo}",
+                            "file");
 
                         ApplyFilter();
                     }
                 }
                 else
                 {
-                    // Already reviewed — show details only
                     ShowDetails(id);
                 }
+                return;
             }
-            else
+
+            // ── EDIT (admin only) ──────────────────────────────
+            if (e.ColumnIndex == dgv.Columns["Edit"].Index && SessionManager.IsAdmin)
             {
-                // Any column click → show details
-                ShowDetails(id);
+                var submissions = DatabaseService.Instance.GetSubmissions();
+                var sub         = submissions.Find(x => x.Id == id);
+                if (sub == null) return;
+
+                var editDlg = new EditSubmissionDialog(sub);
+                if (editDlg.ShowDialog() == DialogResult.OK)
+                {
+                    DatabaseService.Instance.UpdateSubmission(editDlg.Updated);
+                    DatabaseService.Instance.InsertLog(
+                        SessionManager.Current?.FullName ?? "Admin",
+                        "Edit",
+                        $"Edited Book {sub.BookNumber}",
+                        "file");
+                    ApplyFilter();
+                }
+                return;
+            }
+
+            // ── DELETE (admin only) ────────────────────────────
+            if (e.ColumnIndex == dgv.Columns["Delete"].Index && SessionManager.IsAdmin)
+            {
+                var confirm = MessageBox.Show(
+                    $"Permanently delete Book {bookNo}?\n\nThis will remove the local record.\n" +
+                    "The MEGA file must be deleted separately from the MEGA app.",
+                    "Confirm Delete",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (confirm != DialogResult.Yes) return;
+
+                DatabaseService.Instance.DeleteSubmission(id);
+                DatabaseService.Instance.InsertLog(
+                    SessionManager.Current?.FullName ?? "Admin",
+                    "Deletion",
+                    $"Deleted Book {bookNo} (ID: {id})",
+                    "file");
+                ApplyFilter();
             }
         }
 
+        // ── Show read-only details ─────────────────────────────────
         private void ShowDetails(int id)
         {
-            var all = DatabaseService.Instance.GetSubmissions();
-            var sub = all.Find(x => x.Id == id);
+            var submissions = DatabaseService.Instance.GetSubmissions();
+            var sub         = submissions.Find(x => x.Id == id);
             if (sub == null) return;
 
             string info =
-                $"File Name    : {sub.FileName}\n"          +
-                $"Commission   : {sub.DateOfCommission}\n"  +
-                $"Year Covered : {sub.YearCovered}\n"       +
-                $"Submitted By : {sub.SubmittedBy}\n"       +
-                $"Date         : {sub.DateSubmitted:MMM dd, yyyy h:mm tt}\n" +
-                $"Status       : {sub.Status}\n"            +
-                $"Remarks      : {(string.IsNullOrEmpty(sub.Remarks) ? "—" : sub.Remarks)}\n" +
-                $"Reviewed By  : {(string.IsNullOrEmpty(sub.ReviewedBy) ? "—" : sub.ReviewedBy)}\n\n" +
+                $"Book #  : {sub.BookNumber}\n"  +
+                $"Notary  : {sub.NotaryName}\n"  +
+                $"PTR     : {sub.PtrNumber}\n"   +
+                $"IBP     : {sub.IbpNumber}\n"   +
+                $"Year    : {sub.YearCovered}\n" +
+                $"File    : {sub.FileName}\n"    +
+                $"Status  : {sub.Status}\n"      +
+                $"Remarks : {sub.Remarks}\n\n"   +
                 (string.IsNullOrEmpty(sub.MegaLink)
                     ? "No MEGA link available."
                     : $"MEGA Link:\n{sub.MegaLink}");
 
-            MessageBox.Show(info, $"Submission Details — {sub.FileName}",
+            MessageBox.Show(info, $"Submission Details — {sub.BookNumber}",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
+        // ── Export to CSV ──────────────────────────────────────────
         private void Export_Click(object? sender, EventArgs e)
         {
             using var dlg = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "submissions.csv" };
             if (dlg.ShowDialog() != DialogResult.OK) return;
-            using var sw  = new StreamWriter(dlg.FileName);
-            sw.WriteLine("ID,File Name,Date of Commission,Year Covered,Date Submitted,Submitted By,Status,Remarks");
+            using var sw = new StreamWriter(dlg.FileName);
+            sw.WriteLine("ID,Book #,Notary Name,PTR No.,Date Submitted,Status,MEGA Link");
             foreach (DataGridViewRow row in dgv.Rows)
             {
                 if (row.IsNewRow) continue;
-                sw.WriteLine(
-                    $"{row.Cells["Id"].Value}," +
-                    $"\"{row.Cells["FileName"].Value}\"," +
-                    $"{row.Cells["Commission"].Value}," +
-                    $"{row.Cells["Year"].Value}," +
-                    $"{row.Cells["Submitted"].Value}," +
-                    $"\"{row.Cells["SubmittedBy"].Value}\"," +
-                    $"{row.Cells["Status"].Value}," +
-                    $"\"{row.Cells["Remarks"].Value}\"");
+                sw.WriteLine($"{row.Cells["Id"].Value}," +
+                             $"{row.Cells["BookNo"].Value}," +
+                             $"{row.Cells["Notary"].Value}," +
+                             $"{row.Cells["PTR"].Value}," +
+                             $"{row.Cells["Submitted"].Value}," +
+                             $"{row.Cells["Status"].Value}");
             }
             MessageBox.Show("Exported successfully.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -301,76 +373,155 @@ namespace LegalOfficeApp
         }
     }
 
-    // ── Approval dialog ─────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════
+    //  APPROVAL DIALOG (unchanged)
+    // ════════════════════════════════════════════════════════════
     public class ApprovalDialog : Form
     {
         public bool   Approved { get; private set; }
         public string Remarks  { get; private set; } = "";
         private TextBox txtRemarks;
 
-        public ApprovalDialog(string fileName)
+        public ApprovalDialog(string bookNo)
         {
-            Text            = $"Review — {fileName}";
-            Size            = new Size(400, 260);
+            Text            = $"Review — {bookNo}";
+            Size            = new Size(380, 230);
+            StartPosition   = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox     = false;
+            Font            = new Font("Segoe UI", 9.5f);
+
+            var lbl = new Label { Text = $"Remarks for {bookNo} (optional):", Location = new Point(16, 16), Size = new Size(340, 20) };
+            txtRemarks = new TextBox { Multiline = true, Location = new Point(16, 40), Size = new Size(340, 70), Font = new Font("Segoe UI", 9.5f) };
+
+            var btnApprove = Btn("✔  Approve", Color.FromArgb(58, 96, 18));
+            var btnReject  = Btn("✖  Reject",  Color.FromArgb(163, 45, 45));
+            var btnCancel  = Btn("Cancel",      Color.FromArgb(90, 90, 90));
+
+            btnApprove.Location = new Point(16,  124);
+            btnReject .Location = new Point(136, 124);
+            btnCancel .Location = new Point(256, 124);
+
+            btnApprove.Click += (s, e) => { Approved = true;  Remarks = txtRemarks.Text; DialogResult = DialogResult.OK;     Close(); };
+            btnReject .Click += (s, e) => { Approved = false; Remarks = txtRemarks.Text; DialogResult = DialogResult.OK;     Close(); };
+            btnCancel .Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+
+            Controls.AddRange(new Control[] { lbl, txtRemarks, btnApprove, btnReject, btnCancel });
+        }
+
+        private Button Btn(string text, Color bg)
+        {
+            var b = new Button { Text = text, Size = new Size(110, 34), FlatStyle = FlatStyle.Flat,
+                BackColor = bg, ForeColor = Color.White, Cursor = Cursors.Hand };
+            b.FlatAppearance.BorderSize = 0;
+            return b;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  EDIT SUBMISSION DIALOG
+    // ════════════════════════════════════════════════════════════
+    public class EditSubmissionDialog : Form
+    {
+        public Submission Updated { get; private set; }
+
+        private TextBox txtBookNo, txtName, txtPTR, txtIBP, txtYear;
+        private DateTimePicker dtpCommission;
+
+        public EditSubmissionDialog(Submission s)
+        {
+            Updated         = s;
+            Text            = $"Edit Submission — {s.BookNumber}";
+            Size            = new Size(440, 370);
             StartPosition   = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox     = false;
             Font            = new Font("Segoe UI", 9.5f);
             BackColor       = Color.White;
 
-            var lbl = new Label
+            int y = 16;
+            Label Lbl(string t) => new Label { Text = t, Location = new Point(16, y),  AutoSize = true, ForeColor = Color.FromArgb(80,80,80) };
+            TextBox Txt(string v) { var tb = new TextBox { Text = v, Location = new Point(16, y + 20), Width = 394, Font = new Font("Segoe UI", 10f) }; return tb; }
+
+            var lblBook = Lbl("Book Number"); y = 16;
+            txtBookNo = Txt(s.BookNumber);       y += 54;
+
+            var lblName = Lbl("Notary Full Name");
+            txtName = Txt(s.NotaryName);         y += 54;
+
+            var lblPTR = Lbl("PTR Number");
+            txtPTR = Txt(s.PtrNumber);           y += 54;
+
+            var lblIBP = Lbl("IBP Number");
+            txtIBP = Txt(s.IbpNumber);           y += 54;
+
+            var lblDate = new Label { Text = "Date of Commission", Location = new Point(16, y), AutoSize = true };
+            dtpCommission = new DateTimePicker
             {
-                Text     = $"File: {fileName}",
-                Location = new Point(16, 16),
-                Size     = new Size(360, 18),
-                Font     = new Font("Segoe UI", 9f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(30, 30, 30)
+                Format   = DateTimePickerFormat.Short,
+                Location = new Point(16, y + 20),
+                Width    = 180,
+                Font     = new Font("Segoe UI", 10f)
             };
+            if (DateTime.TryParse(s.DateOfCommission, out var doc))
+                dtpCommission.Value = doc;
 
-            var lblR = new Label
+            var lblYear = new Label { Text = "Year Covered", Location = new Point(210, y), AutoSize = true };
+            txtYear = new TextBox { Text = s.YearCovered, Location = new Point(210, y + 20), Width = 200, Font = new Font("Segoe UI", 10f) };
+            y += 54;
+
+            var btnSave   = BtnAction("Save",   Color.FromArgb(10, 26, 107));
+            var btnCancel = BtnAction("Cancel", Color.FromArgb(90, 90, 90));
+            btnSave  .Location = new Point(16,  y + 8);
+            btnCancel.Location = new Point(136, y + 8);
+
+            btnSave.Click += (_, __) =>
             {
-                Text      = "Remarks (optional):",
-                Location  = new Point(16, 40),
-                AutoSize  = true,
-                ForeColor = Color.FromArgb(80, 80, 80)
+                Updated.BookNumber       = txtBookNo.Text.Trim();
+                Updated.NotaryName       = txtName  .Text.Trim();
+                Updated.PtrNumber        = txtPTR   .Text.Trim();
+                Updated.IbpNumber        = txtIBP   .Text.Trim();
+                Updated.DateOfCommission = dtpCommission.Value.ToShortDateString();
+                Updated.YearCovered      = txtYear  .Text.Trim();
+                DialogResult = DialogResult.OK;
+                Close();
             };
+            btnCancel.Click += (_, __) => { DialogResult = DialogResult.Cancel; Close(); };
 
-            txtRemarks = new TextBox
+            // Reposition labels/textboxes now that y positions are captured
+            Controls.AddRange(new Control[]
             {
-                Multiline = true,
-                Location  = new Point(16, 62),
-                Size      = new Size(360, 70),
-                Font      = new Font("Segoe UI", 9.5f),
-                BorderStyle = BorderStyle.FixedSingle
-            };
+                lblBook, txtBookNo,
+                lblName, txtName,
+                lblPTR,  txtPTR,
+                lblIBP,  txtIBP,
+                lblDate, dtpCommission,
+                lblYear, txtYear,
+                btnSave, btnCancel
+            });
 
-            var btnApprove = ActionBtn("✔  Approve", Color.FromArgb(58, 96, 18));
-            var btnReject  = ActionBtn("✖  Reject",  Color.FromArgb(163, 45, 45));
-            var btnCancel  = ActionBtn("Cancel",      Color.FromArgb(90, 90, 90));
-
-            btnApprove.Location = new Point(16,  148);
-            btnReject .Location = new Point(140, 148);
-            btnCancel .Location = new Point(264, 148);
-
-            btnApprove.Click += (s, e) => { Approved = true;  Remarks = txtRemarks.Text; DialogResult = DialogResult.OK;     Close(); };
-            btnReject .Click += (s, e) => { Approved = false; Remarks = txtRemarks.Text; DialogResult = DialogResult.OK;     Close(); };
-            btnCancel .Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
-
-            Controls.AddRange(new Control[] { lbl, lblR, txtRemarks, btnApprove, btnReject, btnCancel });
+            // Adjust label vertical positions
+            int[] ys = { 16, 70, 124, 178, 232 };
+            lblBook.Location = new Point(16, ys[0]);
+            txtBookNo.Location = new Point(16, ys[0] + 20);
+            lblName.Location = new Point(16, ys[1]);
+            txtName.Location = new Point(16, ys[1] + 20);
+            lblPTR.Location  = new Point(16, ys[2]);
+            txtPTR.Location  = new Point(16, ys[2] + 20);
+            lblIBP.Location  = new Point(16, ys[3]);
+            txtIBP.Location  = new Point(16, ys[3] + 20);
+            lblDate.Location = new Point(16, ys[4]);
+            dtpCommission.Location = new Point(16, ys[4] + 20);
+            lblYear.Location = new Point(210, ys[4]);
+            txtYear.Location = new Point(210, ys[4] + 20);
+            btnSave  .Location = new Point(16,  286);
+            btnCancel.Location = new Point(136, 286);
         }
 
-        private Button ActionBtn(string text, Color bg)
+        private Button BtnAction(string text, Color bg)
         {
-            var b = new Button
-            {
-                Text      = text,
-                Size      = new Size(114, 36),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = bg,
-                ForeColor = Color.White,
-                Cursor    = Cursors.Hand,
-                Font      = new Font("Segoe UI", 9.5f)
-            };
+            var b = new Button { Text = text, Size = new Size(110, 34), FlatStyle = FlatStyle.Flat,
+                BackColor = bg, ForeColor = Color.White, Cursor = Cursors.Hand };
             b.FlatAppearance.BorderSize = 0;
             return b;
         }

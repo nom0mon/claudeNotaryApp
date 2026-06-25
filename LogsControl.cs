@@ -34,31 +34,49 @@ namespace LegalOfficeApp
             cboAction = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Width         = 110,
+                Width         = 130,
                 Font          = new Font("Segoe UI", 9.5f),
                 Location      = new Point(52, 4)
             };
-            cboAction.Items.AddRange(new object[] { "All Actions", "Submission", "Approval", "Rejection", "Login", "Logout", "Warning" });
+
+            // Admin sees everything including account events; staff sees only file actions
+            if (SessionManager.IsAdmin)
+            {
+                cboAction.Items.AddRange(new object[]
+                {
+                    "All Actions", "Submission", "Approval", "Rejection",
+                    "Edit", "Deletion", "Login", "Logout", "Warning",
+                    "AccountCreate", "AccountEdit", "AccountDeactivate", "AccountReactivate"
+                });
+            }
+            else
+            {
+                cboAction.Items.AddRange(new object[]
+                {
+                    "All Actions", "Submission", "Approval", "Rejection",
+                    "Edit", "Deletion", "Login", "Logout", "Warning"
+                });
+            }
             cboAction.SelectedIndex         = 0;
             cboAction.SelectedIndexChanged += (s, e) => ApplyFilter();
 
-            var lblFrom = new Label { Text = "From:", Location = new Point(172, 8), AutoSize = true, Font = new Font("Segoe UI", 9f) };
+            var lblFrom = new Label { Text = "From:", Location = new Point(192, 8), AutoSize = true, Font = new Font("Segoe UI", 9f) };
             dtpFrom = new DateTimePicker
             {
                 Format   = DateTimePickerFormat.Short,
                 Width    = 96,
-                Location = new Point(210, 4),
+                Location = new Point(230, 4),
                 Value    = new DateTime(DateTime.Now.Year, 1, 1),
                 Font     = new Font("Segoe UI", 9f)
             };
             dtpFrom.ValueChanged += (s, e) => ApplyFilter();
 
-            var lblTo = new Label { Text = "To:", Location = new Point(314, 8), AutoSize = true, Font = new Font("Segoe UI", 9f) };
+            var lblTo = new Label { Text = "To:", Location = new Point(334, 8), AutoSize = true, Font = new Font("Segoe UI", 9f) };
             dtpTo = new DateTimePicker
             {
                 Format   = DateTimePickerFormat.Short,
                 Width    = 96,
-                Location = new Point(336, 4),
+                Location = new Point(356, 4),
                 Value    = DateTime.Now,
                 Font     = new Font("Segoe UI", 9f)
             };
@@ -67,7 +85,7 @@ namespace LegalOfficeApp
             var btnExport = new Button
             {
                 Text      = "Export CSV",
-                Location  = new Point(442, 2),
+                Location  = new Point(462, 2),
                 Size      = new Size(90, 30),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.White,
@@ -116,8 +134,8 @@ namespace LegalOfficeApp
 
             dgv.Columns["Timestamp"].FillWeight = 20;
             dgv.Columns["User"]     .FillWeight = 18;
-            dgv.Columns["Action"]   .FillWeight = 13;
-            dgv.Columns["Details"]  .FillWeight = 49;
+            dgv.Columns["Action"]   .FillWeight = 14;
+            dgv.Columns["Details"]  .FillWeight = 48;
 
             dgv.CellFormatting += Dgv_CellFormatting;
 
@@ -137,7 +155,12 @@ namespace LegalOfficeApp
             DateTime? from       = dtpFrom?.Value.Date;
             DateTime? to         = dtpTo?.Value.Date;
 
-            var logs = DatabaseService.Instance.GetLogs(actionFilter, from, to);
+            // KEY FIX (Issue 4):
+            // Staff users only see file-category logs — account management actions are hidden.
+            // Admins see everything (categoryFilter = null means no restriction).
+            string? categoryFilter = SessionManager.IsAdmin ? null : "file";
+
+            var logs = DatabaseService.Instance.GetLogs(actionFilter, from, to, categoryFilter);
 
             dgv.Rows.Clear();
             foreach (var log in logs)
@@ -171,6 +194,14 @@ namespace LegalOfficeApp
                     e.CellStyle.ForeColor = Color.FromArgb(163, 45, 45);
                     e.CellStyle.BackColor = Color.FromArgb(252, 235, 235);
                     break;
+                case "Edit":
+                    e.CellStyle.ForeColor = Color.FromArgb(24, 95, 165);
+                    e.CellStyle.BackColor = Color.FromArgb(230, 241, 251);
+                    break;
+                case "Deletion":
+                    e.CellStyle.ForeColor = Color.FromArgb(120, 0, 0);
+                    e.CellStyle.BackColor = Color.FromArgb(255, 220, 220);
+                    break;
                 case "Login": case "Logout":
                     e.CellStyle.ForeColor = Color.FromArgb(24, 95, 165);
                     e.CellStyle.BackColor = Color.FromArgb(230, 241, 251);
@@ -178,6 +209,11 @@ namespace LegalOfficeApp
                 case "Warning":
                     e.CellStyle.ForeColor = Color.FromArgb(130, 60, 0);
                     e.CellStyle.BackColor = Color.FromArgb(255, 245, 220);
+                    break;
+                case "AccountCreate": case "AccountEdit":
+                case "AccountDeactivate": case "AccountReactivate":
+                    e.CellStyle.ForeColor = Color.FromArgb(80, 0, 120);
+                    e.CellStyle.BackColor = Color.FromArgb(240, 228, 255);
                     break;
             }
             e.CellStyle.Font = new Font("Segoe UI", 9f, FontStyle.Bold);

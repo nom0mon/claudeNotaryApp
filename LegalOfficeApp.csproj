@@ -13,9 +13,10 @@
 
   <ItemGroup>
     <!-- SQLite -->
+    <PackageReference Include="Google.Cloud.Firestore" Version="4.3.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
     <!-- MEGA -->
-    <PackageReference Include="MegaApiClient"         Version="1.10.5" />
+    <PackageReference Include="MegaApiClient" Version="1.10.5" />
   </ItemGroup>
 
   <ItemGroup>
