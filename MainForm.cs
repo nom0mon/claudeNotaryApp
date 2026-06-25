@@ -10,34 +10,41 @@ namespace LegalOfficeApp
         private readonly Color NavyHover = Color.FromArgb(20, 40, 130);
         private readonly Color BgGray    = Color.FromArgb(240, 240, 240);
 
+        /// <summary>
+        /// Set to true by Sign Out so Program.cs loops back to the login form.
+        /// Reset to false by Program.cs after reading it.
+        /// </summary>
+        public static bool RestartAfterSignOut { get; set; } = false;
+
         private Panel  panelMenu;
         private Label  logo;
-        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs, btnUsers, btnSignOut;
+        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs, btnSignOut, btnAddStaff;
+        private Label lblRole;
         private Button _activeBtn;
 
         private readonly string[] _fullText = {
-            "   Dashboard",
-            "   Notarial Submission",
-            "   Submission Tracking",
-            "   Activity Logs",
-            "   User Management"
+            "⊞   Dashboard",
+            "↑   Notarial Submission",
+            "⊟   Submission Tracking",
+            "↺   Activity Logs"
         };
-        private readonly string[] _iconOnly = { "⊞", "↑", "⊟", "↺", "👤" };
+        private readonly string[] _iconOnly = { "⊞", "↑", "⊟", "↺" };
 
         private Panel panelContent;
         private Label lblPageTitle;
 
-        private DashboardControl    ucDashboard;
-        private SubmissionControl   ucSubmission;
-        private TrackingControl     ucTracking;
-        private LogsControl         ucLogs;
-        private UserManagementControl ucUsers;
+        private DashboardControl  ucDashboard;
+        private SubmissionControl ucSubmission;
+        private TrackingControl   ucTracking;
+        private LogsControl       ucLogs;
 
         public MainForm()
         {
             InitializeComponent();
             BuildLayout();
             OpenPage(ucDashboard, btnDashboard, "DASHBOARD");
+
+            this.Icon = new Icon("C:\\Users\\Admin\\source\\repos\\NotaryApp\\resources\\logo.ico");
         }
 
         private void BuildLayout()
@@ -49,23 +56,10 @@ namespace LegalOfficeApp
             BackColor     = BgGray;
             Font          = new Font("Segoe UI", 9f);
 
-            // ── Issue 3 Fix: load logo icon if present ────────────────────
-            // Place your icon file as "logo.ico" next to the executable.
-            // The try/catch ensures the app still starts even if the file is missing.
-            try
-            {
-                string iconPath = System.IO.Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory, "logo.ico");
-                if (System.IO.File.Exists(iconPath))
-                    this.Icon = new Icon(iconPath);
-            }
-            catch { /* icon not critical — ignore load failures */ }
-
-            ucDashboard  = new DashboardControl       { Dock = DockStyle.Fill };
-            ucSubmission = new SubmissionControl       { Dock = DockStyle.Fill };
-            ucTracking   = new TrackingControl         { Dock = DockStyle.Fill };
-            ucLogs       = new LogsControl             { Dock = DockStyle.Fill };
-            ucUsers      = new UserManagementControl   { Dock = DockStyle.Fill };
+            ucDashboard  = new DashboardControl  { Dock = DockStyle.Fill };
+            ucSubmission = new SubmissionControl  { Dock = DockStyle.Fill };
+            ucTracking   = new TrackingControl    { Dock = DockStyle.Fill };
+            ucLogs       = new LogsControl        { Dock = DockStyle.Fill };
 
             BuildContentArea();
             BuildSidebar();
@@ -109,11 +103,23 @@ namespace LegalOfficeApp
                 Padding   = new Padding(8)
             };
 
+            bool isAdmin = SessionManager.IsAdmin;
+            lblRole = new Label
+            {
+                Text      = isAdmin ? "🔑  Administrator" : "👤  Staff",
+                ForeColor = isAdmin
+                    ? Color.FromArgb(200, 220, 255)
+                    : Color.FromArgb(180, 180, 200),
+                Font      = new Font("Segoe UI", 7.5f),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Dock      = DockStyle.Top,
+                Height    = 22
+            };
+
             btnDashboard  = NavBtn(_fullText[0]);
             btnSubmission = NavBtn(_fullText[1]);
             btnTracking   = NavBtn(_fullText[2]);
             btnLogs       = NavBtn(_fullText[3]);
-            btnUsers      = NavBtn(_fullText[4]);   // admin only
             btnSignOut    = NavBtn("   Sign Out");
             btnSignOut.Dock = DockStyle.Bottom;
 
@@ -121,24 +127,79 @@ namespace LegalOfficeApp
             btnSubmission.Click += (s, e) => OpenPage(ucSubmission, btnSubmission, "NOTARIAL BOOK SUBMISSION");
             btnTracking  .Click += (s, e) => OpenPage(ucTracking,   btnTracking,   "SUBMISSION TRACKING");
             btnLogs      .Click += (s, e) => OpenPage(ucLogs,       btnLogs,       "ACTIVITY LOGS");
-            btnUsers     .Click += (s, e) => OpenPage(ucUsers,      btnUsers,      "USER MANAGEMENT");
             btnSignOut   .Click += (s, e) => { if (Confirm("Sign out?")) Application.Exit(); };
 
-            // Hide User Management button for non-admin staff
-            btnUsers.Visible = SessionManager.IsAdmin;
+            btnTracking.Visible = isAdmin;
+            btnLogs    .Visible = isAdmin;
 
-            // Stack: Bottom first, then Top items in reverse visual order
+            // Bottom buttons
+            btnAddStaff = BottomBtn("+   Add Staff / Admin", Color.FromArgb(20, 40, 130));
+            btnSignOut = BottomBtn("→   Sign Out", Navy);
+            btnSignOut.Click += SignOut_Click;
+            btnAddStaff.Visible = isAdmin;
+            btnAddStaff.Click  += AddStaff_Click;
+
+            var divider = new Panel
+            {
+                Dock      = DockStyle.Bottom,
+                Height    = 1,
+                BackColor = Color.FromArgb(40, 255, 255, 255)
+            };
+
+
+            panelMenu.Controls.Add(btnAddStaff);
             panelMenu.Controls.Add(btnSignOut);
-            if (SessionManager.IsAdmin)
-                panelMenu.Controls.Add(btnUsers);
+            panelMenu.Controls.Add(divider);
             panelMenu.Controls.Add(btnLogs);
             panelMenu.Controls.Add(btnTracking);
             panelMenu.Controls.Add(btnSubmission);
             panelMenu.Controls.Add(btnDashboard);
+            panelMenu.Controls.Add(lblRole);
             panelMenu.Controls.Add(logo);
             panelMenu.Controls.Add(btnNavIcon);
 
             this.Controls.Add(panelMenu);
+        }
+
+        private Button BottomBtn(string text, Color bg)
+        {
+            var btn = new Button
+            {
+                Text      = text,
+                Dock      = DockStyle.Bottom,
+                Height    = 44,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = bg,
+                ForeColor = Color.FromArgb(200, 200, 200),
+                Font      = new Font("Segoe UI", 9.5f),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding   = new Padding(14, 0, 0, 0),
+                Cursor    = Cursors.Hand
+            };
+            btn.FlatAppearance.BorderSize         = 0;
+            btn.FlatAppearance.MouseOverBackColor = NavyHover;
+            return btn;
+        }
+
+
+
+        // ── Sign Out: set flag then close so Program.cs loops to login ──
+          private void SignOut_Click(object? sender, EventArgs e)
+        {
+            if (MessageBox.Show("Sign out and return to login?", "Sign Out",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            RestartAfterSignOut = true;
+            this.Close();
+        }
+
+        private void AddStaff_Click(object? sender, EventArgs e)
+        {
+            var dlg = new SignupForm();
+            dlg.ShowDialog(this);
+            if (panelContent.Controls.Count > 0 && panelContent.Controls[0] is LogsControl lg)
+                lg.RefreshData();
         }
 
         private Button NavBtn(string text)
@@ -168,6 +229,7 @@ namespace LegalOfficeApp
         private void BuildContentArea()
         {
             var topBar = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Color.White };
+            var roleTag = SessionManager.IsAdmin ? " (Administrator)" : " (Staff)";
 
             lblPageTitle = new Label
             {
@@ -181,18 +243,14 @@ namespace LegalOfficeApp
             };
             var lblUser = new Label
             {
-                Text      = $"👤  {SessionManager.Current?.FullName ?? "User"}",
+                Text      = $"👤  {SessionManager.Current?.FullName ?? "User"}{roleTag}",
                 Font      = new Font("Segoe UI", 9f),
                 ForeColor = Color.FromArgb(80, 80, 80),
                 Dock      = DockStyle.Right,
-                Width     = 180,
+                Width     = 160,
                 TextAlign = ContentAlignment.MiddleRight,
                 Padding   = new Padding(0, 0, 16, 0)
             };
-            // Show role badge next to user name for clarity
-            string roleBadge = SessionManager.IsAdmin ? "  [Admin]" : "  [Staff]";
-            lblUser.Text = $"👤  {SessionManager.Current?.FullName ?? "User"}{roleBadge}";
-
             var border = new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = Color.FromArgb(220, 220, 220) };
             topBar.Controls.AddRange(new Control[] { border, lblUser, lblPageTitle });
 
@@ -214,10 +272,9 @@ namespace LegalOfficeApp
             panelContent.Controls.Add(page);
             lblPageTitle.Text = title;
 
-            if (page is DashboardControl     db) db.RefreshData();
-            if (page is TrackingControl      tr) tr.RefreshData();
-            if (page is LogsControl          lg) lg.RefreshData();
-            if (page is UserManagementControl um) um.RefreshData();
+            if (page is DashboardControl  db) db.RefreshData();
+            if (page is TrackingControl   tr) tr.RefreshData();
+            if (page is LogsControl       lg) lg.RefreshData();
 
             if (_activeBtn != null)
             {
@@ -227,28 +284,29 @@ namespace LegalOfficeApp
             _activeBtn    = btn;
             btn.BackColor = Color.FromArgb(20, 40, 130);
             btn.ForeColor = Color.White;
+            
         }
 
-        // ── Collapse / Expand sidebar ──────────────────────────────────
+        // ── Collapse / Expand sidebar ─────────────────────────────────
         private void CollapseMenu()
         {
             bool expanded = panelMenu.Width > 80;
-            // All nav buttons (including users if admin)
-            Button[] navBtns = SessionManager.IsAdmin
-                ? new[] { btnDashboard, btnSubmission, btnTracking, btnLogs, btnUsers }
-                : new[] { btnDashboard, btnSubmission, btnTracking, btnLogs };
+            Button[] navBtns = { btnDashboard, btnSubmission, btnTracking, btnLogs };
 
-            if (expanded)
-            {
-                panelMenu.Width = 56;
-                logo.Visible    = false;
-                for (int i = 0; i < navBtns.Length; i++)
+if (expanded)
+             {
+                 panelMenu.Width = 56;
+                 logo.Visible    = false;
+                 lblRole.Visible = false;
+
+                 for (int i = 0; i < navBtns.Length; i++)
                 {
                     navBtns[i].Text      = _iconOnly[i];
                     navBtns[i].Font      = new Font("Segoe UI", 14f);
                     navBtns[i].TextAlign = ContentAlignment.MiddleCenter;
                     navBtns[i].Padding   = new Padding(0);
                 }
+                btnAddStaff.Text     = "+";
                 btnSignOut.Text      = "→";
                 btnSignOut.Font      = new Font("Segoe UI", 14f);
                 btnSignOut.TextAlign = ContentAlignment.MiddleCenter;
@@ -256,18 +314,21 @@ namespace LegalOfficeApp
                 btnNavIcon.TextAlign = ContentAlignment.MiddleCenter;
                 btnNavIcon.Padding   = new Padding(0);
             }
-            else
-            {
-                panelMenu.Width = 210;
-                logo.Visible    = true;
-                for (int i = 0; i < navBtns.Length; i++)
+else
+             {
+                 panelMenu.Width = 210;
+                 logo.Visible    = true;
+                 lblRole.Visible = true;
+
+                 for (int i = 0; i < navBtns.Length; i++)
                 {
                     navBtns[i].Text      = _fullText[i];
                     navBtns[i].Font      = new Font("Segoe UI", 9.5f);
                     navBtns[i].TextAlign = ContentAlignment.MiddleLeft;
                     navBtns[i].Padding   = new Padding(14, 0, 0, 0);
                 }
-                btnSignOut.Text      = "   Sign Out";
+                btnAddStaff.Text     = "+   Add Staff / Admin";
+                btnSignOut.Text      = "→   Sign Out";
                 btnSignOut.Font      = new Font("Segoe UI", 9.5f);
                 btnSignOut.TextAlign = ContentAlignment.MiddleLeft;
                 btnSignOut.Padding   = new Padding(14, 0, 0, 0);
@@ -276,8 +337,9 @@ namespace LegalOfficeApp
             }
         }
 
-        private bool Confirm(string msg) =>
+         private bool Confirm(string msg) =>
             MessageBox.Show(msg, "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+ 
 
         private void InitializeComponent()
         {

@@ -21,7 +21,8 @@ namespace LegalOfficeApp
             MaximizeBox     = false;
             BackColor       = Color.White;
             Font            = new Font("Segoe UI", 9.5f);
-
+            this.Icon = new Icon("C:\\Users\\Admin\\source\\repos\\NotaryApp\\resources\\logo.ico");
+        
             BuildUI();
         }
 
