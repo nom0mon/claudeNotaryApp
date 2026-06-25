@@ -83,6 +83,7 @@ namespace LegalOfficeApp
                     Id           INTEGER PRIMARY KEY AUTOINCREMENT,
                     Username     TEXT    NOT NULL UNIQUE,
                     PasswordHash TEXT    NOT NULL,
+                    PasswordSalt TEXT    NOT NULL DEFAULT '',
                     Role         TEXT    NOT NULL DEFAULT 'Staff',
                     FullName     TEXT    NOT NULL DEFAULT '',
                     IsActive     INTEGER NOT NULL DEFAULT 1
@@ -129,8 +130,14 @@ namespace LegalOfficeApp
         {
             var migrations = new[]
             {
-                "ALTER TABLE Submissions   ADD COLUMN FirestoreId TEXT NOT NULL DEFAULT '';",
-                "ALTER TABLE ActivityLogs  ADD COLUMN Category    TEXT NOT NULL DEFAULT 'file';"
+                "ALTER TABLE Submissions   ADD COLUMN FirestoreId  TEXT NOT NULL DEFAULT '';",
+                "ALTER TABLE ActivityLogs  ADD COLUMN Category     TEXT NOT NULL DEFAULT 'file';",
+                // FIX (root cause #7): pre-existing installs created before the salted-hash
+                // fix won't have this column yet. Adding it here means ValidateLogin can
+                // detect "this is a legacy unsalted account" (empty salt) vs. a modern one,
+                // and upgrade legacy accounts to salted hashes transparently on next login
+                // without forcing a password reset on everyone.
+                "ALTER TABLE Users         ADD COLUMN PasswordSalt TEXT NOT NULL DEFAULT '';"
             };
             foreach (var sql in migrations)
             {
@@ -151,11 +158,15 @@ namespace LegalOfficeApp
             long count = (long)(check.ExecuteScalar() ?? 0L);
             if (count > 0) return;
 
+            string salt = GenerateSalt();
+            string hash = HashPasswordSalted("admin123", salt);
+
             using var ins = conn.CreateCommand();
             ins.CommandText = @"
-                INSERT INTO Users (Username, PasswordHash, Role, FullName)
-                VALUES ('admin', @hash, 'Admin', 'Admin Juan');";
-            ins.Parameters.AddWithValue("@hash", HashPassword("admin123"));
+                INSERT INTO Users (Username, PasswordHash, PasswordSalt, Role, FullName)
+                VALUES ('admin', @hash, @salt, 'Admin', 'Admin Juan');";
+            ins.Parameters.AddWithValue("@hash", hash);
+            ins.Parameters.AddWithValue("@salt", salt);
             ins.ExecuteNonQuery();
         }
 
@@ -166,37 +177,82 @@ namespace LegalOfficeApp
         public AppUser? ValidateLogin(string username, string password)
         {
             using var conn = Open();
-            using var cmd  = conn.CreateCommand();
-            cmd.CommandText = @"
-                SELECT Id, Username, PasswordHash, Role, FullName, IsActive
-                FROM Users WHERE Username = @u AND IsActive = 1;";
-            cmd.Parameters.AddWithValue("@u", username);
 
-            using var r = cmd.ExecuteReader();
-            if (!r.Read()) return null;
-            string storedHash = r.GetString(2);
-            if (storedHash != HashPassword(password)) return null;
+            int      id;
+            string   storedHash, storedSalt, role, fullName;
+            bool     isActive;
+
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = @"
+                    SELECT Id, Username, PasswordHash, PasswordSalt, Role, FullName, IsActive
+                    FROM Users WHERE Username = @u AND IsActive = 1;";
+                cmd.Parameters.AddWithValue("@u", username);
+
+                using var r = cmd.ExecuteReader();
+                if (!r.Read()) return null;
+
+                id         = r.GetInt32(0);
+                storedHash = r.GetString(2);
+                storedSalt = r.GetString(3);
+                role       = r.GetString(4);
+                fullName   = r.GetString(5);
+                isActive   = r.GetInt32(6) == 1;
+            }
+
+            bool valid;
+
+            // FIX (root cause #7): accounts created before this fix have PasswordSalt = ''
+            // and were hashed with plain unsalted SHA-256. Verify those against the legacy
+            // algorithm, and if correct, transparently re-hash with a fresh random salt so
+            // the account is upgraded without requiring a forced password reset.
+            if (string.IsNullOrEmpty(storedSalt))
+            {
+                valid = string.Equals(storedHash, HashPasswordLegacy(password), StringComparison.Ordinal);
+                if (valid)
+                {
+                    string newSalt = GenerateSalt();
+                    string newHash = HashPasswordSalted(password, newSalt);
+                    using var upd = conn.CreateCommand();
+                    upd.CommandText = "UPDATE Users SET PasswordHash = @h, PasswordSalt = @s WHERE Id = @id;";
+                    upd.Parameters.AddWithValue("@h",  newHash);
+                    upd.Parameters.AddWithValue("@s",  newSalt);
+                    upd.Parameters.AddWithValue("@id", id);
+                    upd.ExecuteNonQuery();
+                    storedHash = newHash;
+                }
+            }
+            else
+            {
+                valid = string.Equals(storedHash, HashPasswordSalted(password, storedSalt), StringComparison.Ordinal);
+            }
+
+            if (!valid) return null;
 
             return new AppUser
             {
-                Id           = r.GetInt32(0),
-                Username     = r.GetString(1),
+                Id           = id,
+                Username     = username,
                 PasswordHash = storedHash,
-                Role         = r.GetString(3),
-                FullName     = r.GetString(4),
-                IsActive     = r.GetInt32(5) == 1
+                Role         = role,
+                FullName     = fullName,
+                IsActive     = isActive
             };
         }
 
         public void CreateUser(AppUser user, string plainPassword)
         {
+            string salt = GenerateSalt();
+            string hash = HashPasswordSalted(plainPassword, salt);
+
             using var conn = Open();
             using var cmd  = conn.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO Users (Username, PasswordHash, Role, FullName, IsActive)
-                VALUES (@u, @h, @r, @f, 1);";
+                INSERT INTO Users (Username, PasswordHash, PasswordSalt, Role, FullName, IsActive)
+                VALUES (@u, @h, @s, @r, @f, 1);";
             cmd.Parameters.AddWithValue("@u", user.Username);
-            cmd.Parameters.AddWithValue("@h", HashPassword(plainPassword));
+            cmd.Parameters.AddWithValue("@h", hash);
+            cmd.Parameters.AddWithValue("@s", salt);
             cmd.Parameters.AddWithValue("@r", user.Role);
             cmd.Parameters.AddWithValue("@f", user.FullName);
             cmd.ExecuteNonQuery();
@@ -251,10 +307,14 @@ namespace LegalOfficeApp
         /// <summary>Change a user's password.</summary>
         public void ChangePassword(int id, string newPlainPassword)
         {
+            string salt = GenerateSalt();
+            string hash = HashPasswordSalted(newPlainPassword, salt);
+
             using var conn = Open();
             using var cmd  = conn.CreateCommand();
-            cmd.CommandText = "UPDATE Users SET PasswordHash = @h WHERE Id = @id;";
-            cmd.Parameters.AddWithValue("@h",  HashPassword(newPlainPassword));
+            cmd.CommandText = "UPDATE Users SET PasswordHash = @h, PasswordSalt = @s WHERE Id = @id;";
+            cmd.Parameters.AddWithValue("@h",  hash);
+            cmd.Parameters.AddWithValue("@s",  salt);
             cmd.Parameters.AddWithValue("@id", id);
             cmd.ExecuteNonQuery();
         }
@@ -545,7 +605,29 @@ namespace LegalOfficeApp
             return conn;
         }
 
-        public static string HashPassword(string plain)
+        // FIX (root cause #8): the previous HashPassword(string) was unsalted SHA-256 —
+        // identical passwords across different accounts produced identical hashes, and
+        // the scheme was vulnerable to precomputed (rainbow-table) lookups. Replaced with
+        // per-user random salt + PBKDF2-HMACSHA256 (100k iterations). HashPasswordLegacy
+        // is kept ONLY so ValidateLogin can verify and transparently upgrade accounts that
+        // were created before this fix — it must never be used for new password storage.
+
+        private static string GenerateSalt()
+        {
+            var bytes = new byte[16];
+            System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
+            return Convert.ToBase64String(bytes);
+        }
+
+        private static string HashPasswordSalted(string plain, string salt)
+        {
+            byte[] saltBytes = Convert.FromBase64String(salt);
+            using var pbkdf2 = new System.Security.Cryptography.Rfc2898DeriveBytes(
+                plain, saltBytes, 100_000, System.Security.Cryptography.HashAlgorithmName.SHA256);
+            return Convert.ToHexString(pbkdf2.GetBytes(32)).ToLower();
+        }
+
+        private static string HashPasswordLegacy(string plain)
         {
             using var sha = System.Security.Cryptography.SHA256.Create();
             byte[] bytes  = System.Text.Encoding.UTF8.GetBytes(plain);

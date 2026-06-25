@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 
 namespace LegalOfficeApp
@@ -18,25 +19,28 @@ namespace LegalOfficeApp
 
         private Panel  panelMenu;
         private Label  logo;
-        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs, btnSignOut, btnAddStaff;
+        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs, btnUsers, btnSignOut, btnAddStaff;
         private Label lblRole;
         private Button _activeBtn;
 
+        // FIX (root cause #6): "User Management" added as a 5th nav entry, admin-only.
         private readonly string[] _fullText = {
             "⊞   Dashboard",
             "↑   Notarial Submission",
             "⊟   Submission Tracking",
-            "↺   Activity Logs"
+            "↺   Activity Logs",
+            "👥   User Management"
         };
-        private readonly string[] _iconOnly = { "⊞", "↑", "⊟", "↺" };
+        private readonly string[] _iconOnly = { "⊞", "↑", "⊟", "↺", "👥" };
 
         private Panel panelContent;
         private Label lblPageTitle;
 
-        private DashboardControl  ucDashboard;
-        private SubmissionControl ucSubmission;
-        private TrackingControl   ucTracking;
-        private LogsControl       ucLogs;
+        private DashboardControl       ucDashboard;
+        private SubmissionControl      ucSubmission;
+        private TrackingControl        ucTracking;
+        private LogsControl            ucLogs;
+        private UserManagementControl  ucUsers;
 
         public MainForm()
         {
@@ -44,7 +48,14 @@ namespace LegalOfficeApp
             BuildLayout();
             OpenPage(ucDashboard, btnDashboard, "DASHBOARD");
 
-            this.Icon = new Icon("C:\\Users\\Admin\\source\\repos\\NotaryApp\\resources\\logo.ico");
+            // FIX (root cause #1): previously
+            //   this.Icon = new Icon("C:\Users\Admin\source\repos\NotaryApp\resources\logo.ico");
+            // crashed MainForm's constructor on every machine but the original developer's —
+            // meaning the app crashed immediately after every successful login. Load relative
+            // to the executable and guard with File.Exists.
+            string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logo.ico");
+            if (File.Exists(iconPath))
+                this.Icon = new Icon(iconPath);
         }
 
         private void BuildLayout()
@@ -56,10 +67,11 @@ namespace LegalOfficeApp
             BackColor     = BgGray;
             Font          = new Font("Segoe UI", 9f);
 
-            ucDashboard  = new DashboardControl  { Dock = DockStyle.Fill };
-            ucSubmission = new SubmissionControl  { Dock = DockStyle.Fill };
-            ucTracking   = new TrackingControl    { Dock = DockStyle.Fill };
-            ucLogs       = new LogsControl        { Dock = DockStyle.Fill };
+            ucDashboard  = new DashboardControl       { Dock = DockStyle.Fill };
+            ucSubmission = new SubmissionControl      { Dock = DockStyle.Fill };
+            ucTracking   = new TrackingControl        { Dock = DockStyle.Fill };
+            ucLogs       = new LogsControl            { Dock = DockStyle.Fill };
+            ucUsers      = new UserManagementControl  { Dock = DockStyle.Fill };
 
             BuildContentArea();
             BuildSidebar();
@@ -120,21 +132,32 @@ namespace LegalOfficeApp
             btnSubmission = NavBtn(_fullText[1]);
             btnTracking   = NavBtn(_fullText[2]);
             btnLogs       = NavBtn(_fullText[3]);
-            btnSignOut    = NavBtn("   Sign Out");
-            btnSignOut.Dock = DockStyle.Bottom;
+            btnUsers      = NavBtn(_fullText[4]);
 
             btnDashboard .Click += (s, e) => OpenPage(ucDashboard,  btnDashboard,  "DASHBOARD");
             btnSubmission.Click += (s, e) => OpenPage(ucSubmission, btnSubmission, "NOTARIAL BOOK SUBMISSION");
             btnTracking  .Click += (s, e) => OpenPage(ucTracking,   btnTracking,   "SUBMISSION TRACKING");
             btnLogs      .Click += (s, e) => OpenPage(ucLogs,       btnLogs,       "ACTIVITY LOGS");
-            btnSignOut   .Click += (s, e) => { if (Confirm("Sign out?")) Application.Exit(); };
+            btnUsers     .Click += (s, e) => OpenPage(ucUsers,      btnUsers,      "USER MANAGEMENT");
 
-            btnTracking.Visible = isAdmin;
-            btnLogs    .Visible = isAdmin;
+            // FIX (root cause #5): Tracking and Logs were previously hidden from Staff
+            // entirely (Visible = isAdmin), even though both controls already contain
+            // their own Staff-appropriate behavior — TrackingControl falls back to a
+            // view-only details dialog for non-admins, and LogsControl filters out
+            // account-category entries for non-admins. Hiding the nav buttons made that
+            // logic permanently unreachable for Staff. Both are now visible to every
+            // signed-in user; the existing per-control logic still governs what they can
+            // do/see once inside.
+            btnTracking.Visible = true;
+            btnLogs.Visible     = true;
+
+            // User Management performs account creation/deactivation/password resets —
+            // this one is correctly admin-only.
+            btnUsers.Visible = isAdmin;
 
             // Bottom buttons
             btnAddStaff = BottomBtn("+   Add Staff / Admin", Color.FromArgb(20, 40, 130));
-            btnSignOut = BottomBtn("→   Sign Out", Navy);
+            btnSignOut  = BottomBtn("→   Sign Out", Navy);
             btnSignOut.Click += SignOut_Click;
             btnAddStaff.Visible = isAdmin;
             btnAddStaff.Click  += AddStaff_Click;
@@ -146,10 +169,10 @@ namespace LegalOfficeApp
                 BackColor = Color.FromArgb(40, 255, 255, 255)
             };
 
-
             panelMenu.Controls.Add(btnAddStaff);
             panelMenu.Controls.Add(btnSignOut);
             panelMenu.Controls.Add(divider);
+            panelMenu.Controls.Add(btnUsers);
             panelMenu.Controls.Add(btnLogs);
             panelMenu.Controls.Add(btnTracking);
             panelMenu.Controls.Add(btnSubmission);
@@ -181,10 +204,8 @@ namespace LegalOfficeApp
             return btn;
         }
 
-
-
         // ── Sign Out: set flag then close so Program.cs loops to login ──
-          private void SignOut_Click(object? sender, EventArgs e)
+        private void SignOut_Click(object? sender, EventArgs e)
         {
             if (MessageBox.Show("Sign out and return to login?", "Sign Out",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
@@ -198,8 +219,16 @@ namespace LegalOfficeApp
         {
             var dlg = new SignupForm();
             dlg.ShowDialog(this);
-            if (panelContent.Controls.Count > 0 && panelContent.Controls[0] is LogsControl lg)
-                lg.RefreshData();
+
+            // FIX: previously only refreshed LogsControl if it happened to be the open
+            // page. UserManagementControl is now a reachable page too, so refresh it as
+            // well if it's the one currently displayed — otherwise a newly-created account
+            // wouldn't appear until the admin manually navigated away and back.
+            if (panelContent.Controls.Count > 0)
+            {
+                if (panelContent.Controls[0] is LogsControl lg) lg.RefreshData();
+                if (panelContent.Controls[0] is UserManagementControl um) um.RefreshData();
+            }
         }
 
         private Button NavBtn(string text)
@@ -272,9 +301,10 @@ namespace LegalOfficeApp
             panelContent.Controls.Add(page);
             lblPageTitle.Text = title;
 
-            if (page is DashboardControl  db) db.RefreshData();
-            if (page is TrackingControl   tr) tr.RefreshData();
-            if (page is LogsControl       lg) lg.RefreshData();
+            if (page is DashboardControl       db) db.RefreshData();
+            if (page is TrackingControl        tr) tr.RefreshData();
+            if (page is LogsControl            lg) lg.RefreshData();
+            if (page is UserManagementControl  um) um.RefreshData();
 
             if (_activeBtn != null)
             {
@@ -284,14 +314,14 @@ namespace LegalOfficeApp
             _activeBtn    = btn;
             btn.BackColor = Color.FromArgb(20, 40, 130);
             btn.ForeColor = Color.White;
-            
+
         }
 
         // ── Collapse / Expand sidebar ─────────────────────────────────
         private void CollapseMenu()
         {
             bool expanded = panelMenu.Width > 80;
-            Button[] navBtns = { btnDashboard, btnSubmission, btnTracking, btnLogs };
+            Button[] navBtns = { btnDashboard, btnSubmission, btnTracking, btnLogs, btnUsers };
 
 if (expanded)
              {
@@ -339,7 +369,7 @@ else
 
          private bool Confirm(string msg) =>
             MessageBox.Show(msg, "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
- 
+
 
         private void InitializeComponent()
         {
