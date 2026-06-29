@@ -80,6 +80,7 @@ namespace LegalOfficeApp
                 AllowUserToAddRows    = false,
                 ReadOnly              = true,
                 SelectionMode         = DataGridViewSelectionMode.FullRowSelect,
+                MultiSelect            = true,
                 AutoSizeColumnsMode   = DataGridViewAutoSizeColumnsMode.Fill,
                 Font                  = new Font("Segoe UI", 9f),
                 GridColor             = Color.FromArgb(230, 230, 230),
@@ -227,8 +228,29 @@ namespace LegalOfficeApp
             }
             if (e.ColumnIndex == dgv.Columns["Email"].Index)
             {
-                e.CellStyle.BackColor = Color.FromArgb(230, 244, 234);
-                e.CellStyle.ForeColor = Color.FromArgb(30, 110, 60);
+            // Collect all selected submissions (multi-select support)
+                var selected = dgv.SelectedRows
+                    .Cast<DataGridViewRow>()
+                    .Select(r => r.Cells["FsId"].Value?.ToString() ?? "")
+                    .Where(id => !string.IsNullOrEmpty(id))
+                    .Select(id => _currentSubmissions.Find(s => s.Id == id))
+                    .Where(s => s != null)
+                    .Cast<Submission>()
+                    .ToList();
+
+                if (selected.Count == 0) return;
+
+                if (selected.Count > 10)
+                {
+                    MessageBox.Show(
+                        "Maximum batch size is 10 documents. Please select up to 10 rows.",
+                        "Batch Limit", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                var dlg = new SendEmailDialog(selected);
+                dlg.ShowDialog();
+                return;
             }
         }
 

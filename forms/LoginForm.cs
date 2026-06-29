@@ -26,7 +26,7 @@ namespace LegalOfficeApp
             ApplyIcon();
             BuildUI();
         }
-        
+
         private void ApplyIcon()
         {
             string exeDir  = AppDomain.CurrentDomain.BaseDirectory;
@@ -170,6 +170,7 @@ namespace LegalOfficeApp
                 }
 
                 SessionManager.Login(user);
+                _ = CheckOverdueSchedulesAsync();
                     Hide();
 
                 using (var main = new MainForm())
@@ -215,5 +216,62 @@ namespace LegalOfficeApp
             BorderStyle = BorderStyle.FixedSingle,
             Font        = new Font("Segoe UI", 10f)
         };
+
+    private async System.Threading.Tasks.Task CheckOverdueSchedulesAsync()
+    {
+        try
+        {
+            var overdue = await FirestoreService.Instance.GetOverdueSchedulesAsync();
+            if (overdue.Count == 0) return;
+
+            string list = string.Join("\n", overdue.Select(s =>
+                $"• {s.DocumentNames.Count} file(s) → {s.RecipientEmail} " +
+                $"(scheduled {s.ScheduledAt.ToLocalTime():MMM dd, yyyy hh:mm tt})"));
+
+            var result = MessageBox.Show(
+                $"You have {overdue.Count} overdue scheduled email(s):\n\n{list}\n\nSend them now?",
+                "Overdue Schedules",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (result != DialogResult.Yes) return;
+
+            int sent = 0, failed = 0;
+            foreach (var schedule in overdue)
+            {
+                try
+                {
+                    await FirestoreService.Instance.Gmail.SendBatchDocumentAsync(
+                        schedule.RecipientEmail,
+                        schedule.RecipientEmail,
+                        schedule.FilePaths,
+                        schedule.FileNames,
+                        schedule.DocumentNames,
+                        schedule.Notes);
+
+                    await FirestoreService.Instance.UpdateScheduleStatusAsync(schedule.Id, "Sent");
+                    await FirestoreService.Instance.InsertLogAsync(
+                        SessionManager.Current?.FullName ?? "",
+                        "EmailSent",
+                        $"Overdue schedule sent: {schedule.DocumentNames.Count} file(s) to {schedule.RecipientEmail}",
+                        "file");
+                    sent++;
+                }
+                catch
+                {
+                    failed++;
+                }
+            }
+
+            string summary = sent > 0 && failed == 0
+                ? $"{sent} overdue schedule(s) sent successfully."
+                : $"{sent} sent, {failed} failed. Check Scheduling tab for details.";
+
+            MessageBox.Show(summary, "Done", MessageBoxButtons.OK,
+                failed > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+        }
+        catch { /* non-fatal — don't block login */ }
+    }
+
     }
 }

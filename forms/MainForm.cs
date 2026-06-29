@@ -14,7 +14,8 @@ namespace LegalOfficeApp
 
         private Panel  panelMenu;
         private Label  logo;
-        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking, btnLogs, btnUsers, btnSignOut;
+        private Button btnNavIcon, btnDashboard, btnSubmission, btnTracking,
+                       btnLogs, btnUsers, btnScheduling, btnSignOut;
         private Button _activeBtn;
 
         private readonly string[] _fullText = {
@@ -22,9 +23,10 @@ namespace LegalOfficeApp
             "↑   Notarial Submission",
             "⊟   Submission Tracking",
             "↺   Activity Logs",
-            "👤   User Management"
+            "👤   User Management",
+            "📅   Scheduling"           // index 5
         };
-        private readonly string[] _iconOnly = { "⊞", "↑", "⊟", "↺", "👤" };
+        private readonly string[] _iconOnly = { "⊞", "↑", "⊟", "↺", "👤", "📅" };
 
         private Panel  panelContent;
         private Label  lblPageTitle;
@@ -34,6 +36,7 @@ namespace LegalOfficeApp
         private TrackingControl       ucTracking;
         private LogsControl           ucLogs;
         private UserManagementControl ucUsers;
+        private SchedulingControl     ucScheduling;
 
         public MainForm()
         {
@@ -41,33 +44,34 @@ namespace LegalOfficeApp
             ApplyIcon();
             BuildLayout();
             OpenPage(ucDashboard, btnDashboard, "DASHBOARD");
-            var asm = Assembly.GetExecutingAssembly();
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
 
-            if (SessionManager.Current != null)
+            if (e.CloseReason == CloseReason.UserClosing)
             {
                 if (!Confirm("Exit the application?"))
                 {
                     e.Cancel = true;
+                    return;
                 }
+                SessionManager.Logout();
+                Application.Exit();
             }
         }
 
-         private void ApplyIcon()
+        private void ApplyIcon()
         {
             string exeDir  = AppDomain.CurrentDomain.BaseDirectory;
             string[] paths = {
                 Path.Combine(exeDir, "logo.ico"),
                 Path.Combine(exeDir, "app.ico"),
-                // 2. Try project root (development / VS Code)
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "logo.ico"),
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "app.ico"),
             };
- 
+
             foreach (var p in paths)
             {
                 try
@@ -75,17 +79,14 @@ namespace LegalOfficeApp
                     string full = Path.GetFullPath(p);
                     if (File.Exists(full))
                     {
-                        var icon = new Icon(full);
-                        this.Icon                    = icon;
-                        // Also set the taskbar icon via ShowInTaskbar
-                        this.ShowInTaskbar           = true;
+                        this.Icon          = new Icon(full);
+                        this.ShowInTaskbar = true;
                         return;
                     }
                 }
                 catch { }
             }
- 
-            // 3. Fall back to embedded resource named "logo.ico" or "app.ico"
+
             try
             {
                 var asm = Assembly.GetExecutingAssembly();
@@ -112,12 +113,12 @@ namespace LegalOfficeApp
             BackColor     = BgGray;
             Font          = new Font("Segoe UI", 9f);
 
-
             ucDashboard  = new DashboardControl      { Dock = DockStyle.Fill };
             ucSubmission = new SubmissionControl      { Dock = DockStyle.Fill };
             ucTracking   = new TrackingControl        { Dock = DockStyle.Fill };
             ucLogs       = new LogsControl            { Dock = DockStyle.Fill };
             ucUsers      = new UserManagementControl  { Dock = DockStyle.Fill };
+            ucScheduling = new SchedulingControl      { Dock = DockStyle.Fill };
 
             BuildContentArea();
             BuildSidebar();
@@ -166,35 +167,45 @@ namespace LegalOfficeApp
             btnTracking   = NavBtn(_fullText[2]);
             btnLogs       = NavBtn(_fullText[3]);
             btnUsers      = NavBtn(_fullText[4]);
+            btnScheduling = NavBtn(_fullText[5]);
             btnSignOut    = NavBtn("→   Sign Out");
+
             btnSignOut.Dock = DockStyle.Bottom;
 
             btnDashboard .Click += (s, e) => OpenPage(ucDashboard,  btnDashboard,  "DASHBOARD");
-            btnSubmission.Click += (s, e) => OpenPage(ucSubmission, btnSubmission, "NOTARIAL BOOK SUBMISSION");
-            btnTracking  .Click += (s, e) => OpenPage(ucTracking,   btnTracking,   "SUBMISSION TRACKING");
-            btnLogs      .Click += (s, e) => OpenPage(ucLogs,       btnLogs,       "ACTIVITY LOGS");
-            btnUsers     .Click += (s, e) => OpenPage(ucUsers,      btnUsers,      "USER MANAGEMENT");
-            btnSignOut.Click += (s, e) =>
+            btnSubmission.Click += (s, e) => OpenPage(ucSubmission,  btnSubmission, "NOTARIAL BOOK SUBMISSION");
+            btnTracking  .Click += (s, e) => OpenPage(ucTracking,    btnTracking,   "SUBMISSION TRACKING");
+            btnLogs      .Click += (s, e) => OpenPage(ucLogs,        btnLogs,       "ACTIVITY LOGS");
+            btnUsers     .Click += (s, e) => OpenPage(ucUsers,       btnUsers,      "USER MANAGEMENT");
+            btnScheduling.Click += (s, e) => OpenPage(ucScheduling,  btnScheduling, "SCHEDULING");
+            btnSignOut   .Click += (s, e) =>
             {
-                if (!Confirm("Sign out?"))
-                    return;
-
+                if (!Confirm("Sign out?")) return;
                 SessionManager.Logout();
-                Close();
+                this.Hide();
+                var login = new LoginForm();
+                login.Show();
+                login.FormClosed += (ls, le) =>
+                {
+                    if (SessionManager.Current == null)
+                        Application.Exit();
+                };
             };
 
-            // User Management is admin-only
+            // Admin-only controls
             btnUsers.Visible = SessionManager.IsAdmin;
 
+            // Add controls — order matters (DockStyle.Top stacks bottom-up)
             panelMenu.Controls.Add(btnSignOut);
+            panelMenu.Controls.Add(btnScheduling);
             if (SessionManager.IsAdmin)
                 panelMenu.Controls.Add(btnUsers);
-                panelMenu.Controls.Add(btnLogs);
-                panelMenu.Controls.Add(btnTracking);
-                panelMenu.Controls.Add(btnSubmission);
-                panelMenu.Controls.Add(btnDashboard);
-                panelMenu.Controls.Add(logo);
-                panelMenu.Controls.Add(btnNavIcon);
+            panelMenu.Controls.Add(btnLogs);
+            panelMenu.Controls.Add(btnTracking);
+            panelMenu.Controls.Add(btnSubmission);
+            panelMenu.Controls.Add(btnDashboard);
+            panelMenu.Controls.Add(logo);
+            panelMenu.Controls.Add(btnNavIcon);
 
             this.Controls.Add(panelMenu);
         }
@@ -222,7 +233,7 @@ namespace LegalOfficeApp
             return btn;
         }
 
-        // ── Content area ──────────────────────────────────────────
+        // ── Content area ─────────────────────────────────────────
         private void BuildContentArea()
         {
             var topBar = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Color.White };
@@ -250,7 +261,12 @@ namespace LegalOfficeApp
                 Padding   = new Padding(0, 0, 16, 0)
             };
 
-            var border = new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = Color.FromArgb(220, 220, 220) };
+            var border = new Panel
+            {
+                Dock      = DockStyle.Bottom,
+                Height    = 1,
+                BackColor = Color.FromArgb(220, 220, 220)
+            };
             topBar.Controls.AddRange(new Control[] { border, lblUser, lblPageTitle });
 
             panelContent = new Panel
@@ -275,6 +291,7 @@ namespace LegalOfficeApp
             if (page is TrackingControl       tr) tr.RefreshData();
             if (page is LogsControl           lg) lg.RefreshData();
             if (page is UserManagementControl um) um.RefreshData();
+            if (page is SchedulingControl     sc) sc.RefreshData();
 
             if (_activeBtn != null)
             {
@@ -291,9 +308,10 @@ namespace LegalOfficeApp
         {
             bool expanded = panelMenu.Width > 80;
 
-            Button[] navBtns = SessionManager.IsAdmin
-                ? new[] { btnDashboard, btnSubmission, btnTracking, btnLogs, btnUsers }
-                : new[] { btnDashboard, btnSubmission, btnTracking, btnLogs };
+            // Build nav button array based on role
+            var navBtns = SessionManager.IsAdmin
+                ? new[] { btnDashboard, btnSubmission, btnTracking, btnLogs, btnUsers, btnScheduling }
+                : new[] { btnDashboard, btnSubmission, btnTracking, btnLogs, btnScheduling };
 
             if (expanded)
             {
@@ -334,7 +352,8 @@ namespace LegalOfficeApp
         }
 
         private bool Confirm(string msg) =>
-            MessageBox.Show(msg, "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+            MessageBox.Show(msg, "Confirm", MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question) == DialogResult.Yes;
 
         private void InitializeComponent()
         {

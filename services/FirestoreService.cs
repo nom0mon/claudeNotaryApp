@@ -472,5 +472,94 @@ namespace LegalOfficeApp
             FullName     = d.ContainsField("fullName") ? d.GetValue<string>("fullName") : "",
             IsActive     = d.ContainsField("isActive") && d.GetValue<bool>("isActive")
         };
+
+        // ════════════════════════════════════════════════════════
+        //  SCHEDULES
+        // ════════════════════════════════════════════════════════
+        private const string ColSchedules = "schedules";
+
+        public async Task<string> CreateScheduleAsync(ScheduledEmail schedule)
+        {
+            var doc = await _db.Collection(ColSchedules).AddAsync(new Dictionary<string, object>
+            {
+                ["submissionIds"]  = schedule.SubmissionIds,
+                ["documentNames"]  = schedule.DocumentNames,
+                ["filePaths"]      = schedule.FilePaths,
+                ["fileNames"]      = schedule.FileNames,
+                ["recipientEmail"] = schedule.RecipientEmail,
+                ["scheduledAt"]    = schedule.ScheduledAt.ToString("o"),
+                ["createdBy"]      = schedule.CreatedBy,
+                ["status"]         = "Pending",
+                ["sentAt"]         = "",
+                ["notes"]          = schedule.Notes ?? ""
+            });
+            return doc.Id;
+        }
+
+        public async Task<List<ScheduledEmail>> GetSchedulesAsync(string? statusFilter = null)
+        {
+            Query q = _db.Collection(ColSchedules);
+            if (!string.IsNullOrEmpty(statusFilter))
+                q = q.WhereEqualTo("status", statusFilter);
+
+            var snap = await q.OrderBy("scheduledAt").GetSnapshotAsync();
+            return snap.Documents.Select(DocToSchedule).ToList();
+        }
+
+        public async Task UpdateScheduleStatusAsync(string id, string status)
+        {
+            await _db.Collection(ColSchedules).Document(id).UpdateAsync(
+                new Dictionary<string, object>
+                {
+                    ["status"] = status,
+                    ["sentAt"] = status == "Sent" ? DateTime.UtcNow.ToString("o") : ""
+                });
+        }
+
+        public async Task CancelScheduleAsync(string id)
+        {
+            await _db.Collection(ColSchedules).Document(id)
+                    .UpdateAsync("status", "Cancelled");
+        }
+
+        public async Task<List<ScheduledEmail>> GetOverdueSchedulesAsync()
+        {
+            var snap = await _db.Collection(ColSchedules)
+                                .WhereEqualTo("status", "Pending")
+                                .GetSnapshotAsync();
+
+            return snap.Documents
+                    .Select(DocToSchedule)
+                    .Where(s => s.ScheduledAt <= DateTime.UtcNow)
+                    .ToList();
+        }
+
+        private static ScheduledEmail DocToSchedule(DocumentSnapshot d)
+        {
+            List<string> ToStringList(string field) =>
+                d.ContainsField(field)
+                    ? d.GetValue<List<object>>(field).Select(x => x.ToString() ?? "").ToList()
+                    : new List<string>();
+
+            return new ScheduledEmail
+            {
+                Id             = d.Id,
+                SubmissionIds  = ToStringList("submissionIds"),
+                DocumentNames  = ToStringList("documentNames"),
+                FilePaths      = ToStringList("filePaths"),
+                FileNames      = ToStringList("fileNames"),
+                RecipientEmail = d.ContainsField("recipientEmail") ? d.GetValue<string>("recipientEmail") : "",
+                ScheduledAt    = d.ContainsField("scheduledAt") &&
+                                DateTime.TryParse(d.GetValue<string>("scheduledAt"), out var sa)
+                                ? sa : DateTime.UtcNow,
+                CreatedBy      = d.ContainsField("createdBy") ? d.GetValue<string>("createdBy") : "",
+                Status         = d.ContainsField("status")    ? d.GetValue<string>("status")    : "Pending",
+                Notes          = d.ContainsField("notes")     ? d.GetValue<string>("notes")     : "",
+                SentAt         = d.ContainsField("sentAt") &&
+                                !string.IsNullOrEmpty(d.GetValue<string>("sentAt")) &&
+                                DateTime.TryParse(d.GetValue<string>("sentAt"), out var st)
+                                ? st : null
+            };
+        }
     }
 }
