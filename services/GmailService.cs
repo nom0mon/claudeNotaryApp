@@ -12,6 +12,8 @@ namespace LegalOfficeApp
         private string? _senderEmail;
         private string? _appPassword;
         private string? _displayName;
+        private string? _recipientEmail; 
+        private string? _recipientName;
 
         public GmailService(FirestoreDb db)
         {

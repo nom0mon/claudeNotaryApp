@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Linq;
 
 namespace LegalOfficeApp
 {
@@ -159,7 +160,7 @@ namespace LegalOfficeApp
                 actionFilter, from, to, categoryFilter);
 
             if (!SessionManager.IsAdmin)
-                list = list.Where(l => l.Action != "Login" && l.Action != "Logout").ToList();
+                _logs = _logs.Where(l => l.Action != "Login" && l.Action != "Logout").ToList();
 
             dgv.Rows.Clear();
             foreach (var log in _logs)

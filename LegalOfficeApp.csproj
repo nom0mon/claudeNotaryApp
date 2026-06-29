@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <!-- Firestore (replaces SQLite) -->
+    <PackageReference Include="Google.Apis.Auth" Version="1.75.0" />
     <PackageReference Include="Google.Cloud.Firestore" Version="4.3.0" />
     <PackageReference Include="MailKit" Version="4.17.0" />
     <!-- MEGA upload -->

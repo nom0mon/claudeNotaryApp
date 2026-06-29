@@ -146,6 +146,15 @@ namespace LegalOfficeApp
             notifStack.Controls.Clear();
 
             var logs   = await FirestoreService.Instance.GetLogsAsync();
+
+            if (!SessionManager.IsAdmin)
+            {
+                logs = logs
+                    .Where(l => l.Category == "file")
+                    .Where(l => l.Action != "Login" && l.Action != "Logout")
+                    .ToList();
+            }
+
             var recent = logs.Take(5).ToList();
 
             if (recent.Count == 0)
