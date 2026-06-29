@@ -170,8 +170,15 @@ namespace LegalOfficeApp
                 }
 
                 SessionManager.Login(user);
-                this.DialogResult = DialogResult.OK;
-                this.Close();
+                var main = new MainForm();
+                main.FormClosed += (ms, me) =>
+                {
+                    // When MainForm closes (sign-out hid it then user exited), exit app
+                    if (SessionManager.Current == null)
+                        Application.Exit();
+                };
+                main.Show();
+                this.Hide();
             }
             catch (Exception ex)
             {

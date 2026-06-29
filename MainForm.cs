@@ -153,7 +153,7 @@ namespace LegalOfficeApp
             btnTracking   = NavBtn(_fullText[2]);
             btnLogs       = NavBtn(_fullText[3]);
             btnUsers      = NavBtn(_fullText[4]);
-            btnSignOut    = NavBtn("   Sign Out");
+            btnSignOut    = NavBtn("→   Sign Out");
             btnSignOut.Dock = DockStyle.Bottom;
 
             btnDashboard .Click += (s, e) => OpenPage(ucDashboard,  btnDashboard,  "DASHBOARD");
@@ -161,7 +161,21 @@ namespace LegalOfficeApp
             btnTracking  .Click += (s, e) => OpenPage(ucTracking,   btnTracking,   "SUBMISSION TRACKING");
             btnLogs      .Click += (s, e) => OpenPage(ucLogs,       btnLogs,       "ACTIVITY LOGS");
             btnUsers     .Click += (s, e) => OpenPage(ucUsers,      btnUsers,      "USER MANAGEMENT");
-            btnSignOut   .Click += (s, e) => { if (Confirm("Sign out?")) Application.Exit(); };
+            btnSignOut   .Click += (s, e) => 
+            {
+                SessionManager.Logout();
+                this.Hide();                    // hide instead of close
+
+                // Hide main window, show login
+                var login = new LoginForm();
+                login.Show();
+                // When login window itself closes (user exits from there), exit the app
+                login.FormClosed += (ls, le) =>
+                {
+                    if (SessionManager.Current == null)   // didn't log back in
+                        Application.Exit();
+                };
+            };
 
             // User Management is admin-only
             btnUsers.Visible = SessionManager.IsAdmin;

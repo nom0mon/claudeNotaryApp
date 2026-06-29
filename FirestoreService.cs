@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Google.Cloud.Firestore;
+using Google.Cloud.Firestore.V1;
+using Google.Api.Gax.Grpc;
 
 namespace LegalOfficeApp
 {
@@ -71,19 +73,27 @@ namespace LegalOfficeApp
 
         private FirestoreService()
         {
-            // Credentials JSON sits next to the executable.
-            // Set GOOGLE_APPLICATION_CREDENTIALS before creating FirestoreDb.
-            string credPath = Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory, "firebase-credentials.json");
+          var assembly = System.Reflection.Assembly.GetExecutingAssembly();
 
-            if (!File.Exists(credPath))
-                throw new FileNotFoundException(
-                    "firebase-credentials.json not found next to the executable. " +
-                    "Download it from Firebase Console → Project Settings → Service Accounts.");
+            using var stream = assembly.GetManifestResourceStream("firebase-credentials.json")
+                ?? throw new FileNotFoundException(
+                    "Embedded resource 'firebase-credentials.json' not found. " +
+                    "Ensure it is marked as EmbeddedResource in the .csproj.");
 
-            Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", credPath);
+            using var reader = new StreamReader(stream);
+            string json = reader.ReadToEnd();
 
-            _db = FirestoreDb.Create("legaloffice-3b096");
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            string projectId = doc.RootElement.GetProperty("project_id").GetString()
+                ?? throw new InvalidOperationException("project_id missing from credentials JSON.");
+
+            _db = new FirestoreDbBuilder
+            {
+                ProjectId = projectId,
+                JsonCredentials = json
+            }.Build();
+
+            // _db = FirestoreDb.Create(projectId, db);
         }
 
         // ════════════════════════════════════════════════════════
@@ -167,6 +177,11 @@ namespace LegalOfficeApp
         {
             await _db.Collection(ColUsers).Document(id)
                      .UpdateAsync("isActive", false);
+        }
+
+        public async Task DeleteUserAsync(string id)
+        {
+            await _db.Collection(ColUsers).Document(id).DeleteAsync();
         }
 
         public async Task ChangePasswordAsync(string id, string newPlainPassword)

@@ -105,6 +105,14 @@ namespace LegalOfficeApp
             });
             dgv.Columns["Toggle"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
 
+            // ── NEW: Delete column ─────────────────────────────────
+            dgv.Columns.Add(new DataGridViewButtonColumn
+            {
+                Name = "Delete", HeaderText = "Delete", Text = "🗑 Delete",
+                UseColumnTextForButtonValue = true, FlatStyle = FlatStyle.Flat, Width = 90
+            });
+            dgv.Columns["Delete"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+
             dgv.CellFormatting += Dgv_CellFormatting;
             dgv.CellClick      += Dgv_CellClick;
 
@@ -142,12 +150,18 @@ namespace LegalOfficeApp
                 e.CellStyle.BackColor = Color.FromArgb(252, 235, 235);
                 e.CellStyle.ForeColor = Color.FromArgb(163, 45, 45);
             }
+            // ── NEW: Delete button styling ─────────────────────────
+            if (e.ColumnIndex == dgv.Columns["Delete"].Index)
+            {
+                e.CellStyle.BackColor = Color.FromArgb(80, 20, 20);
+                e.CellStyle.ForeColor = Color.White;
+            }
         }
 
         private void Dgv_CellClick(object? sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
-            string fsId    = dgv.Rows[e.RowIndex].Cells["FsId"].Value?.ToString() ?? "";
+            string fsId     = dgv.Rows[e.RowIndex].Cells["FsId"].Value?.ToString() ?? "";
             string username = dgv.Rows[e.RowIndex].Cells["Username"].Value?.ToString() ?? "";
             string active   = dgv.Rows[e.RowIndex].Cells["Active"].Value?.ToString() ?? "Yes";
             if (string.IsNullOrEmpty(fsId)) return;
@@ -203,6 +217,46 @@ namespace LegalOfficeApp
                         $"{(isActive ? "Deactivated" : "Reactivated")}: {username}",
                         "account");
                 _ = LoadUsersAsync();
+                return;
+            }
+
+            // ── DELETE ────────────────────────────────────────────
+            if (e.ColumnIndex == dgv.Columns["Delete"].Index)
+            {
+                // Block self-deletion
+                if (fsId == SessionManager.Current?.Id)
+                {
+                    MessageBox.Show("You cannot delete your own account.",
+                        "Not Allowed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Two-step confirmation dialog
+                var dlg = new DeleteUserConfirmDialog(username);
+                if (dlg.ShowDialog() != DialogResult.OK) return;
+
+                _ = DeleteUserAsync(fsId, username);
+            }
+        }
+
+        private async System.Threading.Tasks.Task DeleteUserAsync(string fsId, string username)
+        {
+            try
+            {
+                await FirestoreService.Instance.DeleteUserAsync(fsId);
+                await FirestoreService.Instance.InsertLogAsync(
+                    SessionManager.Current?.FullName ?? "Admin",
+                    "AccountDelete",
+                    $"Permanently deleted account: {username}",
+                    "account");
+                await LoadUsersAsync();
+                MessageBox.Show($"Account '{username}' has been permanently deleted.",
+                    "Deleted", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to delete user:\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -232,6 +286,96 @@ namespace LegalOfficeApp
                 MessageBox.Show($"Failed to create user:\n{ex.Message}",
                     "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  DELETE CONFIRMATION DIALOG  (two-step: type username)
+    // ════════════════════════════════════════════════════════════
+    public class DeleteUserConfirmDialog : Form
+    {
+        private readonly string _expectedUsername;
+        private TextBox txtConfirm;
+        private Button  btnDelete;
+
+        public DeleteUserConfirmDialog(string username)
+        {
+            _expectedUsername = username;
+
+            Text            = "Delete User — Confirm";
+            Size            = new Size(400, 240);
+            StartPosition   = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox     = false;
+            BackColor       = Color.White;
+            Font            = new Font("Segoe UI", 9.5f);
+
+            // Warning icon + header
+            var lblWarning = new Label
+            {
+                Text      = "⚠  This action is permanent and cannot be undone.",
+                Location  = new Point(16, 16),
+                Size      = new Size(360, 22),
+                ForeColor = Color.FromArgb(163, 45, 45),
+                Font      = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            };
+
+            var lblInstruction = new Label
+            {
+                Text      = $"Type the username  \"{username}\"  below to confirm deletion:",
+                Location  = new Point(16, 50),
+                Size      = new Size(360, 40),
+                ForeColor = Color.FromArgb(50, 50, 50),
+                Font      = new Font("Segoe UI", 9.5f)
+            };
+
+            txtConfirm = new TextBox
+            {
+                Location    = new Point(16, 96),
+                Width       = 356,
+                Font        = new Font("Segoe UI", 10.5f),
+                PlaceholderText = "Type username here…"
+            };
+            txtConfirm.TextChanged += (s, e) =>
+            {
+                bool matches = txtConfirm.Text.Trim() == _expectedUsername;
+                btnDelete.Enabled   = matches;
+                btnDelete.BackColor = matches
+                    ? Color.FromArgb(163, 45, 45)
+                    : Color.FromArgb(200, 160, 160);
+            };
+
+            btnDelete = new Button
+            {
+                Text      = "🗑  Permanently Delete",
+                Location  = new Point(16, 148),
+                Size      = new Size(180, 36),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(200, 160, 160),   // disabled tint until username typed
+                ForeColor = Color.White,
+                Font      = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                Cursor    = Cursors.Hand,
+                Enabled   = false
+            };
+            btnDelete.FlatAppearance.BorderSize = 0;
+            btnDelete.Click += (s, e) => { DialogResult = DialogResult.OK; Close(); };
+
+            var btnCancel = new Button
+            {
+                Text      = "Cancel",
+                Location  = new Point(204, 148),
+                Size      = new Size(100, 36),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(90, 90, 90),
+                ForeColor = Color.White,
+                Font      = new Font("Segoe UI", 9.5f),
+                Cursor    = Cursors.Hand
+            };
+            btnCancel.FlatAppearance.BorderSize = 0;
+            btnCancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+
+            Controls.AddRange(new Control[]
+                { lblWarning, lblInstruction, txtConfirm, btnDelete, btnCancel });
         }
     }
 
@@ -313,7 +457,7 @@ namespace LegalOfficeApp
         public NewUserDialog()
         {
             Text            = "Create New User";
-            Size            = new Size(380, 300);
+            Size            = new Size(380, 400);
             StartPosition   = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox     = false;
@@ -327,8 +471,8 @@ namespace LegalOfficeApp
                 L("Role", 152),
                 cboRole     = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 174), Width = 340, Font = new Font("Segoe UI", 10f) },
                 L("Password", 206), txtPassword = T("", 228),
-                Btn("Create", Color.FromArgb(10, 26, 107), new Point(16, 234), OnCreate),
-                Btn("Cancel", Color.FromArgb(90, 90, 90),  new Point(136, 234), (_, __) => { DialogResult = DialogResult.Cancel; Close(); })
+                Btn("Create", Color.FromArgb(10, 26, 107), new Point(16, 275), OnCreate),
+                Btn("Cancel", Color.FromArgb(90, 90, 90),  new Point(136, 275), (_, __) => { DialogResult = DialogResult.Cancel; Close(); })
             });
 
             cboRole.Items.AddRange(new object[] { "Admin", "Staff" });

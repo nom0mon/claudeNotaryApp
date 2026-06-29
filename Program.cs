@@ -10,6 +10,7 @@ namespace LegalOfficeApp
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            Application.Run(new LoginForm());   
 
             // 1. Initialise Firestore (seeds default admin if collection is empty)
             try

@@ -41,6 +41,8 @@ namespace LegalOfficeApp
         // ════════════════════════════════════════════════════════
         private void BuildUI()
         {
+            
+
             // ── Stat cards ──────────────────────────────────────
             var cardRow = new TableLayoutPanel
             {
@@ -216,9 +218,10 @@ namespace LegalOfficeApp
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 using var fIcon  = new Font("Segoe UI", 20f);
                 using var fLabel = new Font("Segoe UI", 9f);
-                using var brDim  = new SolidBrush(Color.FromArgb(180, 255, 255, 255));
-                g.DrawString(icon,  fIcon,  brDim, 12, 14);
-                g.DrawString(label, fLabel, brDim, 12, 52);
+                using var brIcon  = new SolidBrush(Color.FromArgb(160, 255, 255, 255));  // icon stays slightly dim
+                using var brLabel = new SolidBrush(Color.White);                          // label fully white
+                g.DrawString(icon,  fIcon,  brIcon,  12, 14);
+                g.DrawString(label, fLabel, brLabel, 12, 52);
             };
             card.Controls.Add(lblValue);
             return (card, lblValue);
