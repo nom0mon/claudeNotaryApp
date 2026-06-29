@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -9,21 +8,26 @@
     <AssemblyName>LegalOfficeApp</AssemblyName>
     <RootNamespace>LegalOfficeApp</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>logo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- SQLite -->
-    <PackageReference Include="FirebaseAuthentication.net" Version="4.1.0" />
-    <PackageReference Include="Google.Cloud.Firestore" Version="4.3.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
-    <!-- MEGA -->
+    <!-- Firestore (replaces SQLite) -->
+    <PackageReference Include="Google.Cloud.Firestore" Version="3.*" />
+    <!-- MEGA upload -->
     <PackageReference Include="MegaApiClient" Version="1.10.5" />
-    <PackageReference Include="System.Reactive" Version="6.1.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Copy appsettings.json (MEGA credentials) to output -->
-    <None Update="appsettings.json">
+    <EmbeddedResource Include="logo.ico" />
+ 
+    <!-- Also copy it next to the .exe for the runtime File.Exists() fallback -->
+    <None Update="logo.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+
+    <!-- Firebase service account credentials — NEVER commit this file to git -->
+    <None Update="firebase-credentials.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

@@ -8,91 +8,80 @@ namespace LegalOfficeApp
     {
         private readonly Color Navy = Color.FromArgb(10, 26, 107);
 
-        private TextBox  txtFullName, txtUsername, txtPassword, txtConfirm;
+        private TextBox txtUsername, txtPassword, txtConfirm, txtFullName;
         private ComboBox cboRole;
-        private Label    lblError;
+        private Label lblError;
 
         public SignupForm()
         {
-            Text            = "Create New Account";
+            Text            = "Create Account – Legal Office";
             Size            = new Size(420, 560);
-            StartPosition   = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition   = FormStartPosition.CenterScreen;
+            FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox     = false;
             BackColor       = Color.White;
             Font            = new Font("Segoe UI", 9.5f);
-
             BuildUI();
         }
 
         private void BuildUI()
         {
-            // ── Header ──────────────────────────────────────────
-            var header = new Panel
+            // Header
+            var header = new Panel { Dock = DockStyle.Top, Height = 120, BackColor = Navy };
+            var lblTitle = new Label
             {
-                Dock      = DockStyle.Top,
-                Height    = 50,
-                BackColor = Navy
-            };
-            header.Controls.Add(new Label
-            {
-                Text      = "CREATE NEW ACCOUNT",
+                Text      = "CREATE ACCOUNT\nLEGAL OFFICE",
                 ForeColor = Color.White,
-                Font      = new Font("Segoe UI", 12f, FontStyle.Bold),
+                Font      = new Font("Segoe UI", 13f, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock      = DockStyle.Fill
-            });
-
-            // ── Form body ────────────────────────────────────────
-            var pnl = new Panel
-            {
-                Dock    = DockStyle.Fill,
-                Padding = new Padding(36, 20, 36, 20)
             };
+            header.Controls.Add(lblTitle);
 
-            int y = 20;
+            var pnlForm = new Panel { Dock = DockStyle.Fill, Padding = new Padding(40, 20, 40, 20) };
 
             // Full Name
-            pnl.Controls.Add(Lbl("Full Name", y));
-            txtFullName = Input(); txtFullName.Location = new Point(36, y + 22); txtFullName.Width = 330;
-            pnl.Controls.Add(txtFullName);
-            y += 66;
+            var lblFull = Lbl("Full Name");
+            lblFull.Location     = new Point(40, 16);
+            txtFullName          = Input();
+            txtFullName.Location = new Point(40, 38);
+            txtFullName.Width    = 320;
 
             // Username
-            pnl.Controls.Add(Lbl("Username", y));
-            txtUsername = Input(); txtUsername.Location = new Point(36, y + 22); txtUsername.Width = 330;
-            pnl.Controls.Add(txtUsername);
-            y += 66;
+            var lblU = Lbl("Username");
+            lblU.Location        = new Point(40, 80);
+            txtUsername          = Input();
+            txtUsername.Location = new Point(40, 102);
+            txtUsername.Width    = 320;
 
             // Role
-            pnl.Controls.Add(Lbl("Role", y));
+            var lblRole = Lbl("Role");
+            lblRole.Location = new Point(40, 144);
             cboRole = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Location      = new Point(36, y + 22),
-                Width         = 330,
-                Font          = new Font("Segoe UI", 10f),
-                Height        = 30
+                Location      = new Point(40, 166),
+                Width         = 320,
+                Font          = new Font("Segoe UI", 10f)
             };
             cboRole.Items.AddRange(new object[] { "Staff", "Admin" });
             cboRole.SelectedIndex = 0;
-            pnl.Controls.Add(cboRole);
-            y += 66;
 
             // Password
-            pnl.Controls.Add(Lbl("Password", y));
-            txtPassword = Input(); txtPassword.Location = new Point(36, y + 22); txtPassword.Width = 330;
+            var lblP = Lbl("Password");
+            lblP.Location        = new Point(40, 208);
+            txtPassword          = Input();
+            txtPassword.Location = new Point(40, 230);
+            txtPassword.Width    = 320;
             txtPassword.PasswordChar = '●';
-            pnl.Controls.Add(txtPassword);
-            y += 66;
 
             // Confirm Password
-            pnl.Controls.Add(Lbl("Confirm Password", y));
-            txtConfirm = Input(); txtConfirm.Location = new Point(36, y + 22); txtConfirm.Width = 330;
+            var lblC = Lbl("Confirm Password");
+            lblC.Location        = new Point(40, 272);
+            txtConfirm           = Input();
+            txtConfirm.Location  = new Point(40, 294);
+            txtConfirm.Width     = 320;
             txtConfirm.PasswordChar = '●';
-            txtConfirm.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) TryCreate(); };
-            pnl.Controls.Add(txtConfirm);
-            y += 66;
 
             // Error label
             lblError = new Label
@@ -100,75 +89,95 @@ namespace LegalOfficeApp
                 Text      = "",
                 ForeColor = Color.FromArgb(163, 45, 45),
                 Font      = new Font("Segoe UI", 8.5f),
-                Location  = new Point(36, y),
-                Size      = new Size(330, 18)
+                Location  = new Point(40, 330),
+                Size      = new Size(320, 20)
             };
-            pnl.Controls.Add(lblError);
-            y += 24;
 
             // Buttons
             var btnCreate = new Button
             {
                 Text      = "Create Account",
-                Location  = new Point(36, y),
-                Size      = new Size(330, 38),
+                Location  = new Point(40, 356),
+                Size      = new Size(320, 40),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Navy,
                 ForeColor = Color.White,
-                Font      = new Font("Segoe UI", 10f, FontStyle.Bold),
+                Font      = new Font("Segoe UI", 11f, FontStyle.Bold),
                 Cursor    = Cursors.Hand
             };
             btnCreate.FlatAppearance.BorderSize = 0;
-            btnCreate.Click += (s, e) => TryCreate();
-            pnl.Controls.Add(btnCreate);
+            btnCreate.Click += BtnCreate_Click;
 
-            var btnCancel = new Button
+            var btnBack = new Button
             {
-                Text      = "Cancel",
-                Location  = new Point(36, y + 46),
-                Size      = new Size(330, 32),
+                Text      = "Back to Login",
+                Location  = new Point(40, 404),
+                Size      = new Size(320, 32),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.White,
                 ForeColor = Color.FromArgb(80, 80, 80),
-                Font      = new Font("Segoe UI", 9.5f),
+                Font      = new Font("Segoe UI", 9f),
                 Cursor    = Cursors.Hand
             };
-            btnCancel.FlatAppearance.BorderColor = Color.FromArgb(180, 180, 180);
-            btnCancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
-            pnl.Controls.Add(btnCancel);
+            btnBack.FlatAppearance.BorderColor = Color.FromArgb(180, 180, 180);
+            btnBack.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
 
-            this.Controls.Add(pnl);
+            pnlForm.Controls.AddRange(new Control[]
+            {
+                lblFull, txtFullName,
+                lblU, txtUsername,
+                lblRole, cboRole,
+                lblP, txtPassword,
+                lblC, txtConfirm,
+                lblError, btnCreate, btnBack
+            });
+
+            this.Controls.Add(pnlForm);
             this.Controls.Add(header);
         }
 
-        private void TryCreate()
+        private async void BtnCreate_Click(object? sender, EventArgs e)
         {
             lblError.Text = "";
 
             string fullName = txtFullName.Text.Trim();
             string username = txtUsername.Text.Trim();
+            string role     = cboRole.SelectedItem?.ToString() ?? "Staff";
             string password = txtPassword.Text;
             string confirm  = txtConfirm.Text;
-            string role     = cboRole.SelectedItem?.ToString() ?? "Staff";
 
             // Validation
             if (string.IsNullOrEmpty(fullName))
-            { lblError.Text = "Full name is required."; return; }
-
+            {
+                lblError.Text = "Full name is required.";
+                return;
+            }
             if (string.IsNullOrEmpty(username))
-            { lblError.Text = "Username is required."; return; }
-
-            if (username.Length < 3)
-            { lblError.Text = "Username must be at least 3 characters."; return; }
-
+            {
+                lblError.Text = "Username is required.";
+                return;
+            }
             if (string.IsNullOrEmpty(password))
-            { lblError.Text = "Password is required."; return; }
-
-            if (password.Length < 6)
-            { lblError.Text = "Password must be at least 6 characters."; return; }
-
+            {
+                lblError.Text = "Password is required.";
+                return;
+            }
             if (password != confirm)
-            { lblError.Text = "Passwords do not match."; return; }
+            {
+                lblError.Text = "Passwords do not match.";
+                txtConfirm.Clear();
+                txtConfirm.Focus();
+                return;
+            }
+            if (password.Length < 6)
+            {
+                lblError.Text = "Password must be at least 6 characters.";
+                return;
+            }
+
+            var btn = (Button)sender!;
+            btn.Enabled = false;
+            btn.Text    = "Creating…";
 
             try
             {
@@ -180,39 +189,37 @@ namespace LegalOfficeApp
                     IsActive = true
                 };
 
-                DatabaseService.Instance.CreateUser(newUser, password);
+                await FirestoreService.Instance.CreateUserAsync(newUser, password);
 
-                // Log the account creation
-                DatabaseService.Instance.InsertLog(
+                await FirestoreService.Instance.InsertLogAsync(
                     SessionManager.Current?.FullName ?? "Admin",
-                    "Account Created",
-                    $"Created {role} account for '{fullName}' (username: {username})");
+                    "AccountCreate",
+                    $"Created account: {username} ({role})",
+                    "account");
 
                 MessageBox.Show(
-                    $"Account created successfully!\n\nName     : {fullName}\nUsername : {username}\nRole     : {role}",
-                    "Account Created",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                    $"Account '{username}' created successfully.",
+                    "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                 DialogResult = DialogResult.OK;
                 Close();
-            }
-            catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.Message.Contains("UNIQUE"))
-            {
-                lblError.Text = "Username already exists. Choose a different one.";
             }
             catch (Exception ex)
             {
                 lblError.Text = $"Error: {ex.Message}";
             }
+            finally
+            {
+                btn.Enabled = true;
+                btn.Text    = "Create Account";
+            }
         }
 
-        private Label Lbl(string text, int y) => new Label
+        private Label Lbl(string text) => new Label
         {
             Text      = text,
             Font      = new Font("Segoe UI", 8.5f),
             ForeColor = Color.FromArgb(90, 90, 90),
-            Location  = new Point(36, y),
             AutoSize  = true
         };
 

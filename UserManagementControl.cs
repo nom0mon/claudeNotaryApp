@@ -1,17 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
 namespace LegalOfficeApp
 {
-    /// <summary>
-    /// Admin-only screen: view, edit, deactivate and create user accounts.
-    /// Add this to MainForm as ucUsers and wire a nav button (admin only).
-    /// </summary>
     public class UserManagementControl : UserControl
     {
         private readonly Color Navy = Color.FromArgb(10, 26, 107);
         private DataGridView dgv;
+        private List<AppUser> _users = new();
 
         public UserManagementControl()
         {
@@ -19,11 +17,10 @@ namespace LegalOfficeApp
             BuildUI();
         }
 
-        public void RefreshData() => LoadUsers();
+        public void RefreshData() => _ = LoadUsersAsync();
 
         private void BuildUI()
         {
-            // ── Toolbar ──────────────────────────────────────────
             var toolbar = new Panel
             {
                 Dock      = DockStyle.Top,
@@ -58,11 +55,9 @@ namespace LegalOfficeApp
                 Cursor    = Cursors.Hand
             };
             btnRefresh.FlatAppearance.BorderColor = Color.FromArgb(180, 180, 180);
-            btnRefresh.Click += (s, e) => LoadUsers();
-
+            btnRefresh.Click += (s, e) => _ = LoadUsersAsync();
             toolbar.Controls.AddRange(new Control[] { btnNew, btnRefresh });
 
-            // ── Grid ─────────────────────────────────────────────
             var card = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(0, 8, 0, 0) };
 
             dgv = new DataGridView
@@ -90,30 +85,24 @@ namespace LegalOfficeApp
             dgv.ColumnHeadersHeight                     = 36;
             dgv.ColumnHeadersHeightSizeMode             = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
 
-            dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "Id",       Visible = false });
+            dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "FsId", Visible = false });
             dgv.Columns.Add("Username", "Username");
             dgv.Columns.Add("FullName", "Full Name");
             dgv.Columns.Add("Role",     "Role");
             dgv.Columns.Add("Active",   "Active");
 
-            // Edit button
-            var btnEditCol = new DataGridViewButtonColumn
+            dgv.Columns.Add(new DataGridViewButtonColumn
             {
-                Name = "Edit", HeaderText = "Edit",
-                Text = "✎ Edit", UseColumnTextForButtonValue = true,
-                FlatStyle = FlatStyle.Flat, Width = 90
-            };
-            dgv.Columns.Add(btnEditCol);
+                Name = "Edit", HeaderText = "Edit", Text = "✎ Edit",
+                UseColumnTextForButtonValue = true, FlatStyle = FlatStyle.Flat, Width = 90
+            });
             dgv.Columns["Edit"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
 
-            // Deactivate / Reactivate button
-            var btnToggleCol = new DataGridViewButtonColumn
+            dgv.Columns.Add(new DataGridViewButtonColumn
             {
-                Name = "Toggle", HeaderText = "Deactivate",
-                Text = "Deactivate", UseColumnTextForButtonValue = false,
-                FlatStyle = FlatStyle.Flat, Width = 100
-            };
-            dgv.Columns.Add(btnToggleCol);
+                Name = "Toggle", HeaderText = "Status", Text = "Deactivate",
+                UseColumnTextForButtonValue = false, FlatStyle = FlatStyle.Flat, Width = 100
+            });
             dgv.Columns["Toggle"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
 
             dgv.CellFormatting += Dgv_CellFormatting;
@@ -123,28 +112,22 @@ namespace LegalOfficeApp
             this.Controls.Add(card);
             this.Controls.Add(toolbar);
 
-            this.HandleCreated += (s, e) => LoadUsers();
+            this.HandleCreated += (s, e) => _ = LoadUsersAsync();
         }
 
-        private void LoadUsers()
+        private async System.Threading.Tasks.Task LoadUsersAsync()
         {
+            _users = await FirestoreService.Instance.GetAllUsersAsync();
             dgv.Rows.Clear();
-            var users = DatabaseService.Instance.GetAllUsers();
-            foreach (var u in users)
+            foreach (var u in _users)
             {
-                int idx = dgv.Rows.Add(
-                    u.Id, u.Username, u.FullName, u.Role,
-                    u.IsActive ? "Yes" : "No");
-
-                // Set toggle button text dynamically
+                int idx = dgv.Rows.Add(u.Id, u.Username, u.FullName, u.Role, u.IsActive ? "Yes" : "No");
                 dgv.Rows[idx].Cells["Toggle"].Value = u.IsActive ? "Deactivate" : "Reactivate";
-
-                // Dim deactivated rows
                 if (!u.IsActive)
                     dgv.Rows[idx].DefaultCellStyle.ForeColor = Color.FromArgb(160, 160, 160);
             }
             if (dgv.Rows.Count == 0)
-                dgv.Rows.Add(0, "—", "No users found", "—", "—");
+                dgv.Rows.Add("", "—", "No users found", "—", "—");
         }
 
         private void Dgv_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
@@ -164,31 +147,26 @@ namespace LegalOfficeApp
         private void Dgv_CellClick(object? sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
-            int    id       = Convert.ToInt32(dgv.Rows[e.RowIndex].Cells["Id"].Value);
+            string fsId    = dgv.Rows[e.RowIndex].Cells["FsId"].Value?.ToString() ?? "";
             string username = dgv.Rows[e.RowIndex].Cells["Username"].Value?.ToString() ?? "";
             string active   = dgv.Rows[e.RowIndex].Cells["Active"].Value?.ToString() ?? "Yes";
-            if (id == 0) return;
+            if (string.IsNullOrEmpty(fsId)) return;
+
+            var user = _users.Find(x => x.Id == fsId);
 
             // ── EDIT ──────────────────────────────────────────────
-            if (e.ColumnIndex == dgv.Columns["Edit"].Index)
+            if (e.ColumnIndex == dgv.Columns["Edit"].Index && user != null)
             {
-                var users = DatabaseService.Instance.GetAllUsers();
-                var user  = users.Find(x => x.Id == id);
-                if (user == null) return;
-
                 var dlg = new EditUserDialog(user);
                 if (dlg.ShowDialog() == DialogResult.OK)
                 {
-                    DatabaseService.Instance.UpdateUser(id, dlg.FullName, dlg.Role, dlg.IsActive);
+                    _ = FirestoreService.Instance.UpdateUserAsync(fsId, dlg.FullName, dlg.Role, dlg.IsActive);
                     if (!string.IsNullOrEmpty(dlg.NewPassword))
-                        DatabaseService.Instance.ChangePassword(id, dlg.NewPassword);
-
-                    DatabaseService.Instance.InsertLog(
-                        SessionManager.Current?.FullName ?? "Admin",
-                        "AccountEdit",
-                        $"Edited account for {username}",
-                        "account");  // <-- category: account (hidden from staff)
-                    LoadUsers();
+                        _ = FirestoreService.Instance.ChangePasswordAsync(fsId, dlg.NewPassword);
+                    _ = FirestoreService.Instance.InsertLogAsync(
+                            SessionManager.Current?.FullName ?? "Admin",
+                            "AccountEdit", $"Edited account: {username}", "account");
+                    _ = LoadUsersAsync();
                 }
                 return;
             }
@@ -196,11 +174,10 @@ namespace LegalOfficeApp
             // ── DEACTIVATE / REACTIVATE ───────────────────────────
             if (e.ColumnIndex == dgv.Columns["Toggle"].Index)
             {
-                bool isCurrentlyActive = active == "Yes";
-                string verb = isCurrentlyActive ? "deactivate" : "reactivate";
+                bool isActive = active == "Yes";
+                string verb   = isActive ? "deactivate" : "reactivate";
 
-                // Prevent admin from deactivating their own account
-                if (id == SessionManager.Current?.Id && isCurrentlyActive)
+                if (fsId == SessionManager.Current?.Id && isActive)
                 {
                     MessageBox.Show("You cannot deactivate your own account.",
                         "Not Allowed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -211,51 +188,48 @@ namespace LegalOfficeApp
                     "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                     return;
 
-                if (isCurrentlyActive)
-                    DatabaseService.Instance.DeactivateUser(id);
+                if (isActive)
+                    _ = FirestoreService.Instance.DeactivateUserAsync(fsId);
                 else
-                    DatabaseService.Instance.UpdateUser(id,
-                        dgv.Rows[e.RowIndex].Cells["FullName"].Value?.ToString() ?? "",
-                        dgv.Rows[e.RowIndex].Cells["Role"].Value?.ToString() ?? "Staff",
-                        true);
+                    _ = FirestoreService.Instance.UpdateUserAsync(
+                            fsId,
+                            dgv.Rows[e.RowIndex].Cells["FullName"].Value?.ToString() ?? "",
+                            dgv.Rows[e.RowIndex].Cells["Role"].Value?.ToString() ?? "Staff",
+                            true);
 
-                DatabaseService.Instance.InsertLog(
-                    SessionManager.Current?.FullName ?? "Admin",
-                    isCurrentlyActive ? "AccountDeactivate" : "AccountReactivate",
-                    $"{(isCurrentlyActive ? "Deactivated" : "Reactivated")} account: {username}",
-                    "account");  // hidden from staff
-                LoadUsers();
+                _ = FirestoreService.Instance.InsertLogAsync(
+                        SessionManager.Current?.FullName ?? "Admin",
+                        isActive ? "AccountDeactivate" : "AccountReactivate",
+                        $"{(isActive ? "Deactivated" : "Reactivated")}: {username}",
+                        "account");
+                _ = LoadUsersAsync();
             }
         }
 
-        private void BtnNew_Click(object? sender, EventArgs e)
+        private async void BtnNew_Click(object? sender, EventArgs e)
         {
             var dlg = new NewUserDialog();
             if (dlg.ShowDialog() != DialogResult.OK) return;
 
-            var newUser = new AppUser
-            {
-                Username = dlg.Username,
-                FullName = dlg.FullName,
-                Role     = dlg.Role,
-                IsActive = true
-            };
-
             try
             {
-                DatabaseService.Instance.CreateUser(newUser, dlg.Password);
-                DatabaseService.Instance.InsertLog(
+                await FirestoreService.Instance.CreateUserAsync(
+                    new AppUser { Username = dlg.Username, FullName = dlg.FullName, Role = dlg.Role },
+                    dlg.Password);
+
+                await FirestoreService.Instance.InsertLogAsync(
                     SessionManager.Current?.FullName ?? "Admin",
                     "AccountCreate",
-                    $"Created account for {dlg.Username} ({dlg.Role})",
-                    "account");  // hidden from staff activity view
-                LoadUsers();
-                MessageBox.Show($"Account '{dlg.Username}' created successfully.",
+                    $"Created account: {dlg.Username} ({dlg.Role})",
+                    "account");
+
+                await LoadUsersAsync();
+                MessageBox.Show($"Account '{dlg.Username}' created.",
                     "Done", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to create user: {ex.Message}",
+                MessageBox.Show($"Failed to create user:\n{ex.Message}",
                     "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -271,9 +245,9 @@ namespace LegalOfficeApp
         public bool   IsActive    { get; private set; } = true;
         public string NewPassword { get; private set; } = "";
 
-        private TextBox   txtFullName, txtPassword;
-        private ComboBox  cboRole;
-        private CheckBox  chkActive;
+        private TextBox  txtFullName, txtPassword;
+        private ComboBox cboRole;
+        private CheckBox chkActive;
 
         public EditUserDialog(AppUser u)
         {
@@ -285,40 +259,42 @@ namespace LegalOfficeApp
             Font            = new Font("Segoe UI", 9.5f);
             BackColor       = Color.White;
 
-            var lblFull = L("Full Name", 16);
-            txtFullName = T(u.FullName, 38);
-
-            var lblRole = L("Role", 90);
-            cboRole = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 112), Width = 340, Font = new Font("Segoe UI", 10f) };
-            cboRole.Items.AddRange(new object[] { "Admin", "Staff" });
-            cboRole.SelectedItem = u.Role;
-
-            var lblPwd = L("New Password (leave blank to keep current)", 144);
-            txtPassword = T("", 166);
-            txtPassword.PasswordChar = '●';
-
-            chkActive = new CheckBox { Text = "Account is active", Location = new Point(16, 206), AutoSize = true, Checked = u.IsActive };
-
-            var btnSave   = Btn("Save",   Color.FromArgb(10, 26, 107), new Point(16, 236));
-            var btnCancel = Btn("Cancel", Color.FromArgb(90, 90, 90),   new Point(136, 236));
-
-            btnSave.Click += (_, __) =>
+            Controls.AddRange(new Control[]
             {
-                FullName    = txtFullName.Text.Trim();
-                Role        = cboRole.SelectedItem?.ToString() ?? "Staff";
-                IsActive    = chkActive.Checked;
-                NewPassword = txtPassword.Text;
-                DialogResult = DialogResult.OK;
-                Close();
-            };
-            btnCancel.Click += (_, __) => { DialogResult = DialogResult.Cancel; Close(); };
+                L("Full Name", 16),            txtFullName = T(u.FullName, 38),
+                L("Role", 90),
+                cboRole     = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 112), Width = 340, Font = new Font("Segoe UI", 10f) },
+                L("New Password (leave blank to keep current)", 144),
+                txtPassword = T("", 166),
+                chkActive   = new CheckBox { Text = "Account is active", Location = new Point(16, 206), AutoSize = true, Checked = u.IsActive },
+                Btn("Save",   Color.FromArgb(10, 26, 107), new Point(16, 236), OnSave),
+                Btn("Cancel", Color.FromArgb(90, 90, 90),  new Point(136, 236), (_, __) => { DialogResult = DialogResult.Cancel; Close(); })
+            });
 
-            Controls.AddRange(new Control[] { lblFull, txtFullName, lblRole, cboRole, lblPwd, txtPassword, chkActive, btnSave, btnCancel });
+            cboRole.Items.AddRange(new object[] { "Admin", "Staff" });
+            cboRole.SelectedItem  = u.Role;
+            txtPassword.PasswordChar = '●';
         }
 
-        private Label   L(string t, int y) => new Label   { Text = t, Location = new Point(16, y), AutoSize = true, ForeColor = Color.FromArgb(80, 80, 80) };
-        private TextBox T(string v, int y) => new TextBox { Text = v, Location = new Point(16, y), Width = 340, Font = new Font("Segoe UI", 10f) };
-        private Button  Btn(string t, Color bg, Point loc) { var b = new Button { Text = t, Location = loc, Size = new Size(110, 34), FlatStyle = FlatStyle.Flat, BackColor = bg, ForeColor = Color.White, Cursor = Cursors.Hand }; b.FlatAppearance.BorderSize = 0; return b; }
+        private void OnSave(object? s, EventArgs e)
+        {
+            FullName    = txtFullName.Text.Trim();
+            Role        = cboRole.SelectedItem?.ToString() ?? "Staff";
+            IsActive    = chkActive.Checked;
+            NewPassword = txtPassword.Text;
+            DialogResult = DialogResult.OK;
+            Close();
+        }
+
+        private Label   L(string t, int y) => new() { Text = t, Location = new Point(16, y), AutoSize = true, ForeColor = Color.FromArgb(80, 80, 80) };
+        private TextBox T(string v, int y) => new() { Text = v, Location = new Point(16, y), Width = 340, Font = new Font("Segoe UI", 10f) };
+        private Button  Btn(string t, Color bg, Point loc, EventHandler h)
+        {
+            var b = new Button { Text = t, Location = loc, Size = new Size(110, 34), FlatStyle = FlatStyle.Flat, BackColor = bg, ForeColor = Color.White, Cursor = Cursors.Hand };
+            b.FlatAppearance.BorderSize = 0;
+            b.Click += h;
+            return b;
+        }
     }
 
     // ════════════════════════════════════════════════════════════
@@ -337,53 +313,53 @@ namespace LegalOfficeApp
         public NewUserDialog()
         {
             Text            = "Create New User";
-            Size            = new Size(380, 310);
+            Size            = new Size(380, 300);
             StartPosition   = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox     = false;
             Font            = new Font("Segoe UI", 9.5f);
             BackColor       = Color.White;
 
-            var lblUser = L("Username", 16);
-            txtUsername = T("", 38);
-
-            var lblFull = L("Full Name", 84);
-            txtFullName = T("", 106);
-
-            var lblRole = L("Role", 152);
-            cboRole = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 174), Width = 340, Font = new Font("Segoe UI", 10f) };
-            cboRole.Items.AddRange(new object[] { "Admin", "Staff" });
-            cboRole.SelectedIndex = 1;
-
-            var lblPwd = L("Password", 206);
-            txtPassword = T("", 228);
-            txtPassword.PasswordChar = '●';
-
-            var btnCreate = Btn("Create", Color.FromArgb(10, 26, 107), new Point(16, 234));
-            var btnCancel = Btn("Cancel", Color.FromArgb(90, 90, 90),   new Point(136, 234));
-
-            btnCreate.Click += (_, __) =>
+            Controls.AddRange(new Control[]
             {
-                if (string.IsNullOrWhiteSpace(txtUsername.Text) || string.IsNullOrWhiteSpace(txtPassword.Text))
-                {
-                    MessageBox.Show("Username and password are required.",
-                        "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-                Username    = txtUsername.Text.Trim();
-                FullName    = txtFullName.Text.Trim();
-                Role        = cboRole.SelectedItem?.ToString() ?? "Staff";
-                Password    = txtPassword.Text;
-                DialogResult = DialogResult.OK;
-                Close();
-            };
-            btnCancel.Click += (_, __) => { DialogResult = DialogResult.Cancel; Close(); };
+                L("Username", 16),  txtUsername = T("", 38),
+                L("Full Name", 84), txtFullName = T("", 106),
+                L("Role", 152),
+                cboRole     = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 174), Width = 340, Font = new Font("Segoe UI", 10f) },
+                L("Password", 206), txtPassword = T("", 228),
+                Btn("Create", Color.FromArgb(10, 26, 107), new Point(16, 234), OnCreate),
+                Btn("Cancel", Color.FromArgb(90, 90, 90),  new Point(136, 234), (_, __) => { DialogResult = DialogResult.Cancel; Close(); })
+            });
 
-            Controls.AddRange(new Control[] { lblUser, txtUsername, lblFull, txtFullName, lblRole, cboRole, lblPwd, txtPassword, btnCreate, btnCancel });
+            cboRole.Items.AddRange(new object[] { "Admin", "Staff" });
+            cboRole.SelectedIndex    = 1;
+            txtPassword.PasswordChar = '●';
         }
 
-        private Label   L(string t, int y) => new Label   { Text = t, Location = new Point(16, y), AutoSize = true, ForeColor = Color.FromArgb(80, 80, 80) };
-        private TextBox T(string v, int y) => new TextBox { Text = v, Location = new Point(16, y), Width = 340, Font = new Font("Segoe UI", 10f) };
-        private Button  Btn(string t, Color bg, Point loc) { var b = new Button { Text = t, Location = loc, Size = new Size(110, 34), FlatStyle = FlatStyle.Flat, BackColor = bg, ForeColor = Color.White, Cursor = Cursors.Hand }; b.FlatAppearance.BorderSize = 0; return b; }
+        private void OnCreate(object? s, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(txtUsername.Text) || string.IsNullOrWhiteSpace(txtPassword.Text))
+            {
+                MessageBox.Show("Username and password are required.",
+                    "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            Username    = txtUsername.Text.Trim();
+            FullName    = txtFullName.Text.Trim();
+            Role        = cboRole.SelectedItem?.ToString() ?? "Staff";
+            Password    = txtPassword.Text;
+            DialogResult = DialogResult.OK;
+            Close();
+        }
+
+        private Label   L(string t, int y) => new() { Text = t, Location = new Point(16, y), AutoSize = true, ForeColor = Color.FromArgb(80, 80, 80) };
+        private TextBox T(string v, int y) => new() { Text = v, Location = new Point(16, y), Width = 340, Font = new Font("Segoe UI", 10f) };
+        private Button  Btn(string t, Color bg, Point loc, EventHandler h)
+        {
+            var b = new Button { Text = t, Location = loc, Size = new Size(110, 34), FlatStyle = FlatStyle.Flat, BackColor = bg, ForeColor = Color.White, Cursor = Cursors.Hand };
+            b.FlatAppearance.BorderSize = 0;
+            b.Click += h;
+            return b;
+        }
     }
 }

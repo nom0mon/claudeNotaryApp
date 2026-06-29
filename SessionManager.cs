@@ -13,15 +13,14 @@ namespace LegalOfficeApp
         public static void Login(AppUser user)
         {
             Current = user;
-            // Login is a file-category event — visible to all users in the logs
-            DatabaseService.Instance.InsertLog(
+            _ = FirestoreService.Instance.InsertLogAsync(
                 user.FullName, "Login", "Logged into the system", "file");
         }
 
         public static void Logout()
         {
             if (Current != null)
-                DatabaseService.Instance.InsertLog(
+                _ = FirestoreService.Instance.InsertLogAsync(
                     Current.FullName, "Logout", "Logged out of the system", "file");
             Current = null;
         }

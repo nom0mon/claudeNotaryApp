@@ -430,6 +430,7 @@ FodyWeavers.xsd
 
 #Custom local configuration files  - NEVER commit this
 appsettings.json
+firebase-credentials.json
 
 # SQLite database
 *.db

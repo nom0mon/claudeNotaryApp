@@ -3,7 +3,6 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
-using System.Collections.Generic;
 
 namespace LegalOfficeApp
 {
@@ -18,9 +17,7 @@ namespace LegalOfficeApp
         private Panel chartCanvas;
         private int[] chartData = new int[12];
         private FlowLayoutPanel notifStack;
-        private DataGridView dgvRecent;
-
-        
+        private DataGridView    dgvRecent;
 
         public DashboardControl()
         {
@@ -29,46 +26,47 @@ namespace LegalOfficeApp
             BuildUI();
         }
 
-        public void RefreshData()
+        public void RefreshData() => _ = RefreshDataAsync();
+
+        private async System.Threading.Tasks.Task RefreshDataAsync()
         {
-            LoadCounts();
-            LoadChart();
-            LoadNotifications();
-            LoadRecentSubmissions();
+            await LoadCountsAsync();
+            await LoadChartAsync();
+            await LoadNotificationsAsync();
+            await LoadRecentSubmissionsAsync();
         }
 
+        // ════════════════════════════════════════════════════════
+        //  BUILD UI
+        // ════════════════════════════════════════════════════════
         private void BuildUI()
         {
             // ── Stat cards ──────────────────────────────────────
             var cardRow = new TableLayoutPanel
             {
-                ColumnCount = 4,
-                RowCount    = 1,
-                Dock        = DockStyle.Top,
-                Height      = 110,
+                ColumnCount = 4, RowCount = 1,
+                Dock        = DockStyle.Top, Height = 120,
                 Padding     = new Padding(0, 0, 0, 12),
                 BackColor   = Color.Transparent
             };
             for (int i = 0; i < 4; i++)
                 cardRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f));
 
-            (var c0, lblTotal)    = StatCard("Total Documents",    "📄", Navy);
-            (var c1, lblPending)  = StatCard("Pending",            "📋", Amber);
-            (var c2, lblApproved) = StatCard("Approved",           "✔",  Green);
-            (var c3, lblRejected) = StatCard("Rejected",           "✖",  Gray);
+            (var c0, lblTotal)    = StatCard("Total Documents", "📄", Navy);
+            (var c1, lblPending)  = StatCard("Pending",         "📋", Amber);
+            (var c2, lblApproved) = StatCard("Approved",        "✔",  Green);
+            (var c3, lblRejected) = StatCard("Rejected",        "✖",  Gray);
 
             cardRow.Controls.Add(c0, 0, 0);
             cardRow.Controls.Add(c1, 1, 0);
             cardRow.Controls.Add(c2, 2, 0);
             cardRow.Controls.Add(c3, 3, 0);
 
-            // ── Middle row ──────────────────────────────────────
+            // ── Middle row ───────────────────────────────────────
             var midRow = new TableLayoutPanel
             {
-                ColumnCount = 2,
-                RowCount    = 1,
-                Dock        = DockStyle.Top,
-                Height      = 220,
+                ColumnCount = 2, RowCount = 1,
+                Dock        = DockStyle.Top, Height = 220,
                 Padding     = new Padding(0, 0, 0, 12),
                 BackColor   = Color.Transparent
             };
@@ -77,7 +75,7 @@ namespace LegalOfficeApp
             midRow.Controls.Add(BuildChartCard(), 0, 0);
             midRow.Controls.Add(BuildNotifCard(), 1, 0);
 
-            // ── Recent submissions ───────────────────────────────
+            // ── Recent submissions ────────────────────────────────
             var tableCard = CardPanel("Recent Submissions", DockStyle.Top, 210);
 
             dgvRecent = new DataGridView
@@ -105,7 +103,7 @@ namespace LegalOfficeApp
             dgvRecent.ColumnHeadersHeight                     = 34;
             dgvRecent.ColumnHeadersHeightSizeMode             = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
 
-            dgvRecent.Columns.Add("BookNo",    "Book #");
+            dgvRecent.Columns.Add("DocName",   "Document Name");
             dgvRecent.Columns.Add("Notary",    "Notary Name");
             dgvRecent.Columns.Add("Submitted", "Date Submitted");
             dgvRecent.Columns.Add("Status",    "Status");
@@ -117,65 +115,112 @@ namespace LegalOfficeApp
             this.Controls.Add(midRow);
             this.Controls.Add(cardRow);
 
-            this.HandleCreated += (s, e) => RefreshData();
+            this.HandleCreated += (s, e) => _ = RefreshDataAsync();
         }
 
         // ════════════════════════════════════════════════════════
-        //  STAT CARD — fixed layout so text is never hidden
+        //  DATA LOADERS
         // ════════════════════════════════════════════════════════
-        private (Panel card, Label valueLabel) StatCard(string title, string icon, Color bg)
+        private async System.Threading.Tasks.Task LoadCountsAsync()
         {
-            var card = new Panel
-            {
-                BackColor = bg,
-                Margin    = new Padding(0, 0, 8, 0),
-                Dock      = DockStyle.Fill
-            };
+            var (total, pending, approved, rejected) =
+                await FirestoreService.Instance.GetDashboardCountsAsync();
 
-            // Icon label — top-left
-            var lblIcon = new Label
-            {
-                Text      = icon,
-                Font      = new Font("Segoe UI", 18f),
-                ForeColor = Color.FromArgb(180, 255, 255, 255),
-                Location  = new Point(12, 10),
-                Size      = new Size(36, 36),
-                TextAlign = ContentAlignment.MiddleCenter
-            };
+            lblTotal   .Text = total   .ToString();
+            lblPending .Text = pending .ToString();
+            lblApproved.Text = approved.ToString();
+            lblRejected.Text = rejected.ToString();
+        }
 
-            // Title label — bottom-left
-            var lblTitle = new Label
-            {
-                Text      = title,
-                Font      = new Font("Segoe UI", 8.5f),
-                ForeColor = Color.FromArgb(210, 255, 255, 255),
-                Location  = new Point(12, 50),
-                Size      = new Size(160, 18),
-                TextAlign = ContentAlignment.MiddleLeft
-            };
+        private async System.Threading.Tasks.Task LoadChartAsync()
+        {
+            chartData = await FirestoreService.Instance
+                .GetMonthlySubmissionsAsync(DateTime.Now.Year);
+            chartCanvas?.Invalidate();
+        }
 
-            // Value label — right side, large
+        private async System.Threading.Tasks.Task LoadNotificationsAsync()
+        {
+            notifStack.Controls.Clear();
+
+            var logs   = await FirestoreService.Instance.GetLogsAsync();
+            var recent = logs.Take(5).ToList();
+
+            if (recent.Count == 0)
+            {
+                notifStack.Controls.Add(new Label
+                {
+                    Text      = "No recent activity.",
+                    ForeColor = Color.Gray,
+                    Font      = new Font("Segoe UI", 8.5f),
+                    AutoSize  = true,
+                    Margin    = new Padding(4, 8, 0, 0)
+                });
+                return;
+            }
+
+            foreach (var log in recent)
+            {
+                Color dot = log.Action switch
+                {
+                    "Approval"   => Color.FromArgb(58,  96,  18),
+                    "Rejection"  => Color.FromArgb(163, 45,  45),
+                    "Submission" => Color.FromArgb(201, 125, 0),
+                    _            => Color.FromArgb(24,  95,  165)
+                };
+                var row    = new Panel { Width = 340, Height = 52 };
+                var lblDot = new Label { Text = "●", ForeColor = dot,       Location = new Point(4, 6),  Size = new Size(16, 16), Font = new Font("Segoe UI", 10f) };
+                var lblMsg = new Label { Text = log.Details,                 Location = new Point(24, 4),  Size = new Size(310, 28), Font = new Font("Segoe UI", 8.5f), ForeColor = Color.FromArgb(40, 40, 40) };
+                var lblTm  = new Label { Text = log.Timestamp.ToLocalTime().ToString("MMM dd, yyyy  h:mm tt"), Location = new Point(24, 32), Size = new Size(310, 16), Font = new Font("Segoe UI", 7.5f), ForeColor = Color.Gray };
+                row.Controls.AddRange(new Control[] { lblDot, lblMsg, lblTm });
+                notifStack.Controls.Add(row);
+            }
+        }
+
+        private async System.Threading.Tasks.Task LoadRecentSubmissionsAsync()
+        {
+            dgvRecent.Rows.Clear();
+            var submissions = await FirestoreService.Instance.GetSubmissionsAsync();
+
+            foreach (var s in submissions.Take(10))
+            {
+                dgvRecent.Rows.Add(
+                    s.DocumentName,
+                    s.NotaryName,
+                    s.DateSubmitted.ToLocalTime().ToString("MMM dd, yyyy"),
+                    s.Status);
+            }
+
+            if (dgvRecent.Rows.Count == 0)
+                dgvRecent.Rows.Add("—", "No submissions yet", "—", "—");
+        }
+
+        // ════════════════════════════════════════════════════════
+        //  UI BUILDERS
+        // ════════════════════════════════════════════════════════
+        private (Panel card, Label valueLabel) StatCard(string label, string icon, Color bg)
+        {
+            var card = new Panel { BackColor = bg, Margin = new Padding(0, 0, 8, 0), Dock = DockStyle.Fill };
             var lblValue = new Label
             {
                 Text      = "—",
-                Font      = new Font("Segoe UI", 28f, FontStyle.Bold),
                 ForeColor = Color.White,
-                TextAlign = ContentAlignment.MiddleRight,
-                Anchor    = AnchorStyles.Top | AnchorStyles.Right,
-                Size      = new Size(90, 70),
-                Location  = new Point(card.Width - 100, 8)
+                Font      = new Font("Segoe UI", 26f, FontStyle.Bold),
+                TextAlign = ContentAlignment.TopRight,
+                Dock      = DockStyle.Fill,
+                Padding   = new Padding(0, 8, 12, 0)
             };
-
-            // Keep value label anchored to right on resize
-            card.Resize += (s, e) =>
+            card.Paint += (s, e) =>
             {
-                lblValue.Location = new Point(card.Width - 100, 8);
+                var g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using var fIcon  = new Font("Segoe UI", 20f);
+                using var fLabel = new Font("Segoe UI", 9f);
+                using var brDim  = new SolidBrush(Color.FromArgb(180, 255, 255, 255));
+                g.DrawString(icon,  fIcon,  brDim, 12, 14);
+                g.DrawString(label, fLabel, brDim, 12, 52);
             };
-
-            card.Controls.Add(lblIcon);
-            card.Controls.Add(lblTitle);
             card.Controls.Add(lblValue);
-
             return (card, lblValue);
         }
 
@@ -195,10 +240,8 @@ namespace LegalOfficeApp
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
             int padL = 36, padR = 12, padT = 16, padB = 30;
-            int w  = chartCanvas.Width  - padL - padR;
-            int h  = chartCanvas.Height - padT - padB;
-            if (w <= 0 || h <= 0) return;
-
+            int w      = chartCanvas.Width  - padL - padR;
+            int h      = chartCanvas.Height - padT - padB;
             int maxVal = Math.Max(chartData.Max(), 1);
 
             using var gridPen = new Pen(Color.FromArgb(230, 230, 230), 1f);
@@ -211,12 +254,11 @@ namespace LegalOfficeApp
                 g.DrawString((maxVal * i / 4).ToString(), fGrid, brG, 2, yPos - 8);
             }
 
-            string[] months  = { "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec" };
-            int barCount = 12;
-            int barW     = Math.Max(6, (w / barCount) - 8);
-            int spacing  = (w - barW * barCount) / (barCount + 1);
+            string[] months = { "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec" };
+            int barW    = Math.Max(6, (w / 12) - 8);
+            int spacing = (w - barW * 12) / 13;
 
-            for (int i = 0; i < barCount; i++)
+            for (int i = 0; i < 12; i++)
             {
                 int barH = chartData[i] == 0 ? 2 : (int)((double)chartData[i] / maxVal * h);
                 int x    = padL + spacing + i * (barW + spacing);
@@ -263,8 +305,7 @@ namespace LegalOfficeApp
         {
             var card = new Panel
             {
-                BackColor = Color.White,
-                Dock      = dock,
+                BackColor = Color.White, Dock = dock,
                 Margin    = new Padding(0, 0, 0, 12),
                 Padding   = new Padding(12, 8, 12, 8)
             };
@@ -278,82 +319,6 @@ namespace LegalOfficeApp
                 Height    = 28
             });
             return card;
-        }
-
-        // ════════════════════════════════════════════════════════
-        //  DATA LOADERS
-        // ════════════════════════════════════════════════════════
-        private void LoadCounts()
-        {
-            var (total, pending, approved, rejected) =
-                DatabaseService.Instance.GetDashboardCounts();
-
-            lblTotal   .Text = total   .ToString();
-            lblPending .Text = pending .ToString();
-            lblApproved.Text = approved.ToString();
-            lblRejected.Text = rejected.ToString();
-        }
-
-        private void LoadChart()
-        {
-            chartData = DatabaseService.Instance.GetMonthlySubmissions(DateTime.Now.Year);
-            chartCanvas?.Invalidate();
-        }
-
-        private void LoadNotifications()
-        {
-            notifStack.Controls.Clear();
-            var logs   = DatabaseService.Instance.GetLogs(null, null, null);
-            var recent = logs.Take(5).ToList();
-
-            if (recent.Count == 0)
-            {
-                notifStack.Controls.Add(new Label
-                {
-                    Text      = "No recent activity.",
-                    ForeColor = Color.Gray,
-                    Font      = new Font("Segoe UI", 8.5f),
-                    AutoSize  = true,
-                    Margin    = new Padding(4, 8, 0, 0)
-                });
-                return;
-            }
-
-            foreach (var log in recent)
-            {
-                Color dot = log.Action switch
-                {
-                    "Approval"   => Color.FromArgb(58,  96,  18),
-                    "Rejection"  => Color.FromArgb(163, 45,  45),
-                    "Submission" => Color.FromArgb(201, 125, 0),
-                    _            => Color.FromArgb(24,  95,  165)
-                };
-
-                var row    = new Panel { Width = 340, Height = 52 };
-                var lblDot = new Label { Text = "●", ForeColor = dot,       Location = new Point(4, 6),  Size = new Size(16, 16), Font = new Font("Segoe UI", 10f) };
-                var lblMsg = new Label { Text = log.Details,                 Location = new Point(24, 4),  Size = new Size(310, 28), Font = new Font("Segoe UI", 8.5f), ForeColor = Color.FromArgb(40, 40, 40) };
-                var lblTm  = new Label { Text = log.Timestamp.ToString("MMM dd, yyyy  h:mm tt"), Location = new Point(24, 32), Size = new Size(310, 16), Font = new Font("Segoe UI", 7.5f), ForeColor = Color.Gray };
-                row.Controls.AddRange(new Control[] { lblDot, lblMsg, lblTm });
-                notifStack.Controls.Add(row);
-            }
-        }
-
-        private void LoadRecentSubmissions()
-        {
-            dgvRecent.Rows.Clear();
-            var submissions = DatabaseService.Instance.GetSubmissions();
-
-            foreach (var s in submissions.Take(10))
-            {
-                dgvRecent.Rows.Add(
-                    s.BookNumber,
-                    s.NotaryName,
-                    s.DateSubmitted.ToString("MMM dd, yyyy"),
-                    s.Status);
-            }
-
-            if (dgvRecent.Rows.Count == 0)
-                dgvRecent.Rows.Add("—", "No submissions yet", "—", "—");
         }
 
         private void DgvRecent_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)

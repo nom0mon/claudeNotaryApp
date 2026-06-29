@@ -11,34 +11,31 @@ namespace LegalOfficeApp
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            // Initialize database once (creates tables + seeds admin if first run)
-            DatabaseService.Instance.Initialize();
-
-            // ── Login loop ────────────────────────────────────────────
-            // Keep re-showing the login form until the user closes the window
-            // entirely (instead of signing out). Sign Out sets a flag that
-            // breaks back to this loop and shows login again.
-            while (true)
+            // 1. Initialise Firestore (seeds default admin if collection is empty)
+            try
             {
-                // Show login
-                using var login = new LoginForm();
-                if (login.ShowDialog() != DialogResult.OK)
-                    break;   // user closed the login window — exit app
-
-                // Run main form; it signals sign-out via MainForm.UserSignedOut
-                var main = new MainForm();
-                Application.Run(main);
-
-                // Log out session after main form closes
-                SessionManager.Logout();
-
-                // If the user chose "Exit" rather than "Sign Out", stop the loop
-                if (!MainForm.RestartAfterSignOut)
-                    break;
-
-                // Otherwise loop back and show login again
-                MainForm.RestartAfterSignOut = false;
+                FirestoreService.Instance.InitializeAsync().GetAwaiter().GetResult();
             }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Failed to connect to Firestore:\n\n{ex.Message}\n\n" +
+                    "Make sure firebase-credentials.json is next to the executable " +
+                    "and the project ID in FirestoreService.cs is correct.",
+                    "Startup Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            // 2. Show login
+            using var login = new LoginForm();
+            if (login.ShowDialog() != DialogResult.OK)
+                return;
+
+            // 3. Open main form
+            Application.Run(new MainForm());
+
+            // 4. Log out on close
+            SessionManager.Logout();
         }
     }
 }

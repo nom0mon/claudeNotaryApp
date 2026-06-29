@@ -17,11 +17,10 @@ namespace LegalOfficeApp
             BuildUI();
         }
 
-        public void RefreshData() => ApplyFilter();
+        public void RefreshData() => _ = ApplyFilterAsync();
 
         private void BuildUI()
         {
-            // ── Filter bar ──────────────────────────────────────
             var filterCard = new Panel
             {
                 Dock      = DockStyle.Top,
@@ -39,7 +38,6 @@ namespace LegalOfficeApp
                 Location      = new Point(52, 4)
             };
 
-            // Admin sees everything including account events; staff sees only file actions
             if (SessionManager.IsAdmin)
             {
                 cboAction.Items.AddRange(new object[]
@@ -58,7 +56,7 @@ namespace LegalOfficeApp
                 });
             }
             cboAction.SelectedIndex         = 0;
-            cboAction.SelectedIndexChanged += (s, e) => ApplyFilter();
+            cboAction.SelectedIndexChanged += (s, e) => _ = ApplyFilterAsync();
 
             var lblFrom = new Label { Text = "From:", Location = new Point(192, 8), AutoSize = true, Font = new Font("Segoe UI", 9f) };
             dtpFrom = new DateTimePicker
@@ -69,7 +67,7 @@ namespace LegalOfficeApp
                 Value    = new DateTime(DateTime.Now.Year, 1, 1),
                 Font     = new Font("Segoe UI", 9f)
             };
-            dtpFrom.ValueChanged += (s, e) => ApplyFilter();
+            dtpFrom.ValueChanged += (s, e) => _ = ApplyFilterAsync();
 
             var lblTo = new Label { Text = "To:", Location = new Point(334, 8), AutoSize = true, Font = new Font("Segoe UI", 9f) };
             dtpTo = new DateTimePicker
@@ -80,7 +78,7 @@ namespace LegalOfficeApp
                 Value    = DateTime.Now,
                 Font     = new Font("Segoe UI", 9f)
             };
-            dtpTo.ValueChanged += (s, e) => ApplyFilter();
+            dtpTo.ValueChanged += (s, e) => _ = ApplyFilterAsync();
 
             var btnExport = new Button
             {
@@ -99,7 +97,6 @@ namespace LegalOfficeApp
             filterCard.Controls.AddRange(new Control[]
                 { lblAction, cboAction, lblFrom, dtpFrom, lblTo, dtpTo, btnExport });
 
-            // ── Grid ─────────────────────────────────────────────
             var gridCard = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(0, 8, 0, 0) };
 
             dgv = new DataGridView
@@ -143,30 +140,29 @@ namespace LegalOfficeApp
             this.Controls.Add(gridCard);
             this.Controls.Add(filterCard);
 
-            this.HandleCreated += (s, e) => ApplyFilter();
+            this.HandleCreated += (s, e) => _ = ApplyFilterAsync();
         }
 
-        // ── Pull from DB ────────────────────────────────────────
-        private void ApplyFilter()
+        // Cache for export
+        private System.Collections.Generic.List<ActivityLog> _logs = new();
+
+        private async System.Threading.Tasks.Task ApplyFilterAsync()
         {
             string action = cboAction?.SelectedItem?.ToString() ?? "All Actions";
 
-            string? actionFilter = action == "All Actions" ? null : action;
-            DateTime? from       = dtpFrom?.Value.Date;
-            DateTime? to         = dtpTo?.Value.Date;
-
-            // KEY FIX (Issue 4):
-            // Staff users only see file-category logs — account management actions are hidden.
-            // Admins see everything (categoryFilter = null means no restriction).
+            string? actionFilter   = action == "All Actions" ? null : action;
+            DateTime? from         = dtpFrom?.Value.Date;
+            DateTime? to           = dtpTo?.Value.Date;
             string? categoryFilter = SessionManager.IsAdmin ? null : "file";
 
-            var logs = DatabaseService.Instance.GetLogs(actionFilter, from, to, categoryFilter);
+            _logs = await FirestoreService.Instance.GetLogsAsync(
+                actionFilter, from, to, categoryFilter);
 
             dgv.Rows.Clear();
-            foreach (var log in logs)
+            foreach (var log in _logs)
             {
                 dgv.Rows.Add(
-                    log.Timestamp.ToString("MMM dd, yyyy  h:mm tt"),
+                    log.Timestamp.ToLocalTime().ToString("MMM dd, yyyy  h:mm tt"),
                     log.User,
                     log.Action,
                     log.Details);
@@ -176,7 +172,6 @@ namespace LegalOfficeApp
                 dgv.Rows.Add("—", "—", "—", "No logs found for the selected filter.");
         }
 
-        // ── Cell formatting ─────────────────────────────────────
         private void Dgv_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
         {
             if (e.ColumnIndex != dgv.Columns["Action"].Index || e.Value == null) return;
@@ -219,20 +214,16 @@ namespace LegalOfficeApp
             e.CellStyle.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
         }
 
-        // ── Export ──────────────────────────────────────────────
         private void Export_Click(object? sender, EventArgs e)
         {
             using var dlg = new SaveFileDialog { Filter = "CSV|*.csv", FileName = "activity_logs.csv" };
             if (dlg.ShowDialog() != DialogResult.OK) return;
             using var sw = new System.IO.StreamWriter(dlg.FileName);
             sw.WriteLine("Timestamp,User,Action,Details");
-            foreach (DataGridViewRow row in dgv.Rows)
+            foreach (var log in _logs)
             {
-                if (row.IsNewRow) continue;
-                sw.WriteLine($"\"{row.Cells["Timestamp"].Value}\"," +
-                             $"\"{row.Cells["User"].Value}\"," +
-                             $"\"{row.Cells["Action"].Value}\"," +
-                             $"\"{row.Cells["Details"].Value}\"");
+                sw.WriteLine($"\"{log.Timestamp.ToLocalTime():MMM dd, yyyy  h:mm tt}\"," +
+                             $"\"{log.User}\",\"{log.Action}\",\"{log.Details}\"");
             }
             MessageBox.Show("Logs exported.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
