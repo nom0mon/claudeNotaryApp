@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Reflection;
+
 namespace LegalOfficeApp
 {
     public class LoginForm : Form
@@ -25,10 +26,9 @@ namespace LegalOfficeApp
             ApplyIcon();
             BuildUI();
         }
-
+        
         private void ApplyIcon()
         {
-            // 1. Try next to the .exe (deployment)
             string exeDir  = AppDomain.CurrentDomain.BaseDirectory;
             string[] paths = {
                 Path.Combine(exeDir, "logo.ico"),
@@ -170,15 +170,25 @@ namespace LegalOfficeApp
                 }
 
                 SessionManager.Login(user);
-                var main = new MainForm();
-                main.FormClosed += (ms, me) =>
+                    Hide();
+
+                using (var main = new MainForm())
                 {
-                    // When MainForm closes (sign-out hid it then user exited), exit app
-                    if (SessionManager.Current == null)
-                        Application.Exit();
-                };
-                main.Show();
-                this.Hide();
+                    main.ShowDialog();
+                }
+
+                if (SessionManager.Current == null)
+                {
+                    // User signed out
+                    txtPassword.Clear();
+                    txtUsername.Focus();
+                    Show();
+                }
+                else
+                {
+                    // User closed MainForm using the X button
+                    Close();
+                }
             }
             catch (Exception ex)
             {

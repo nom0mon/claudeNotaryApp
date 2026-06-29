@@ -203,26 +203,36 @@ namespace LegalOfficeApp
         private (Panel card, Label valueLabel) StatCard(string label, string icon, Color bg)
         {
             var card = new Panel { BackColor = bg, Margin = new Padding(0, 0, 8, 0), Dock = DockStyle.Fill };
+
             var lblValue = new Label
             {
                 Text      = "—",
                 ForeColor = Color.White,
                 Font      = new Font("Segoe UI", 26f, FontStyle.Bold),
                 TextAlign = ContentAlignment.TopRight,
-                Dock      = DockStyle.Fill,
+                Dock      = DockStyle.None,
+                AutoSize  = false,
+                Anchor    = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 Padding   = new Padding(0, 8, 12, 0)
             };
+
+            // Position lblValue dynamically on resize
+            card.Resize += (s, e) =>
+            {
+                lblValue.Location = new Point(0, 8);
+                lblValue.Size     = new Size(card.Width, 50);
+            };
+
             card.Paint += (s, e) =>
             {
                 var g = e.Graphics;
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                using var fIcon  = new Font("Segoe UI", 20f);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 using var fLabel = new Font("Segoe UI", 9f);
-                using var brIcon  = new SolidBrush(Color.FromArgb(160, 255, 255, 255));  // icon stays slightly dim
-                using var brLabel = new SolidBrush(Color.White);                          // label fully white
-                g.DrawString(icon,  fIcon,  brIcon,  12, 14);
-                g.DrawString(label, fLabel, brLabel, 12, 52);
+                using var brLabel = new SolidBrush(Color.White);
+                // Draw label text at the bottom of the card
+                g.DrawString(label, fLabel, brLabel, 12, card.Height - 28);
             };
+
             card.Controls.Add(lblValue);
             return (card, lblValue);
         }

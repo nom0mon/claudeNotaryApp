@@ -8,7 +8,7 @@ namespace LegalOfficeApp
 {
     public class TrackingControl : UserControl
     {
-        private readonly Color Navy = Color.FromArgb(10, 26, 107);
+         private readonly Color Navy = Color.FromArgb(10, 26, 107);
         private DataGridView dgv;
         private TextBox      txtSearch;
         private ComboBox     cboStatus;
@@ -100,7 +100,6 @@ namespace LegalOfficeApp
             dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "FsId", Visible = false });
             dgv.Columns.Add("BookNo",    "Book #");
             dgv.Columns.Add("DocName",   "Document Name");
-            dgv.Columns.Add("Notary",    "Notary Name");
             dgv.Columns.Add("Submitted", "Date Submitted");
             dgv.Columns.Add("Status",    "Status");
 
@@ -131,6 +130,14 @@ namespace LegalOfficeApp
             });
             dgv.Columns["Delete"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
 
+            dgv.Columns.Add(new DataGridViewButtonColumn
+            {
+                Name = "Email", HeaderText = "Email",
+                Text = "📧 Send", UseColumnTextForButtonValue = true,
+                FlatStyle = FlatStyle.Flat, Width = 84
+            });
+            dgv.Columns["Email"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+
             dgv.CellFormatting += Dgv_CellFormatting;
             dgv.CellClick      += Dgv_CellClick;
 
@@ -156,29 +163,38 @@ namespace LegalOfficeApp
             bool isAdmin = SessionManager.IsAdmin;
             dgv.Rows.Clear();
 
+            // Hide columns for staff (do this once, not per row)
+            if (!isAdmin)
+            {
+                dgv.Columns["Action"].Visible = false;
+                dgv.Columns["Edit"]  .Visible = false;
+                dgv.Columns["Delete"].Visible = false;
+                dgv.Columns["Email"] .Visible = true;
+            }
+            else
+            {
+                dgv.Columns["Action"].Visible = true;
+                dgv.Columns["Edit"]  .Visible = true;
+                dgv.Columns["Delete"].Visible = true;
+                dgv.Columns["Email"] .Visible = true;
+            }
+
             foreach (var s in _currentSubmissions)
             {
                 int idx = dgv.Rows.Add(
                     s.Id,
                     s.BookNumber,
                     s.DocumentName,
-                    s.NotaryName,
                     s.DateSubmitted.ToLocalTime().ToString("MMM dd, yyyy"),
                     s.Status);
-
-                if (!isAdmin)
-                {
-                    dgv.Rows[idx].Cells["Edit"]  .Value = "";
-                    dgv.Rows[idx].Cells["Delete"].Value = "";
-                }
             }
 
             if (dgv.Rows.Count == 0)
-                dgv.Rows.Add("", "—", "No records found", "—", "—", "—");
+                dgv.Rows.Add("", "—", "No records found", "—", "—");
         }
 
         // ── Cell formatting ────────────────────────────────────────
-        private void Dgv_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
+        private async void Dgv_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
         {
             if (e.ColumnIndex == dgv.Columns["Status"].Index && e.Value != null)
             {
@@ -209,10 +225,15 @@ namespace LegalOfficeApp
                 e.CellStyle.BackColor = Color.FromArgb(252, 235, 235);
                 e.CellStyle.ForeColor = Color.FromArgb(163, 45, 45);
             }
+            if (e.ColumnIndex == dgv.Columns["Email"].Index)
+            {
+                e.CellStyle.BackColor = Color.FromArgb(230, 244, 234);
+                e.CellStyle.ForeColor = Color.FromArgb(30, 110, 60);
+            }
         }
 
         // ── Cell click ────────────────────────────────────────────
-        private void Dgv_CellClick(object? sender, DataGridViewCellEventArgs e)
+        private async void Dgv_CellClick(object? sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
             string fsId   = dgv.Rows[e.RowIndex].Cells["FsId"].Value?.ToString() ?? "";
@@ -222,7 +243,7 @@ namespace LegalOfficeApp
 
             var sub = _currentSubmissions.Find(x => x.Id == fsId);
 
-            // ── VIEW / REVIEW ──────────────────────────────────────
+// ── VIEW / REVIEW ──────────────────────────────────────────────
             if (e.ColumnIndex == dgv.Columns["Action"].Index)
             {
                 if (status == "Pending" && SessionManager.IsAdmin)
@@ -232,9 +253,9 @@ namespace LegalOfficeApp
                     {
                         string newStatus = dlg.Approved ? "Approved" : "Rejected";
                         string reviewer  = SessionManager.Current?.FullName ?? "Admin";
-                        _ = FirestoreService.Instance.ReviewSubmissionAsync(
+                        await FirestoreService.Instance.ReviewSubmissionAsync(
                                 fsId, newStatus, dlg.Remarks, reviewer);
-                        _ = FirestoreService.Instance.InsertLogAsync(
+                        await FirestoreService.Instance.InsertLogAsync(
                                 reviewer,
                                 newStatus == "Approved" ? "Approval" : "Rejection",
                                 $"{newStatus}: '{docName}'",
@@ -255,8 +276,8 @@ namespace LegalOfficeApp
                 var editDlg = new EditSubmissionDialog(sub);
                 if (editDlg.ShowDialog() == DialogResult.OK)
                 {
-                    _ = FirestoreService.Instance.UpdateSubmissionAsync(editDlg.Updated);
-                    _ = FirestoreService.Instance.InsertLogAsync(
+                    await FirestoreService.Instance.UpdateSubmissionAsync(editDlg.Updated);
+                    await FirestoreService.Instance.InsertLogAsync(
                             SessionManager.Current?.FullName ?? "Admin",
                             "Edit", $"Edited '{docName}'", "file");
                     _ = ApplyFilterAsync();
@@ -273,14 +294,21 @@ namespace LegalOfficeApp
                         "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning)
                     != DialogResult.Yes) return;
 
-                _ = FirestoreService.Instance.DeleteSubmissionAsync(fsId);
-                _ = FirestoreService.Instance.InsertLogAsync(
+                await FirestoreService.Instance.DeleteSubmissionAsync(fsId);
+                await FirestoreService.Instance.InsertLogAsync(
                         SessionManager.Current?.FullName ?? "Admin",
                         "Deletion", $"Deleted '{docName}'", "file");
                 _ = ApplyFilterAsync();
             }
-        }
 
+            // ── EMAIL ──────────────────────────────────────────────
+            if (e.ColumnIndex == dgv.Columns["Email"].Index && sub != null)
+            {
+                var dlg = new SendEmailDialog(sub);
+                dlg.ShowDialog();
+                return;
+            }
+        }
         private static void ShowDetails(Submission sub)
         {
             string info =
@@ -311,7 +339,6 @@ namespace LegalOfficeApp
             foreach (var s in _currentSubmissions)
             {
                 sw.WriteLine($"\"{s.DocumentName}\",\"{s.BookNumber}\"," +
-                             $"\"{s.NotaryName}\",\"{s.PtrNumber}\"," +
                              $"\"{s.DateSubmitted.ToLocalTime():MMM dd, yyyy}\"," +
                              $"\"{s.Status}\",\"{s.MegaLink}\"");
             }
@@ -386,21 +413,21 @@ namespace LegalOfficeApp
     public class EditSubmissionDialog : Form
     {
         public Submission Updated { get; private set; }
-        private TextBox        txtBookNo, txtName, txtPTR, txtIBP, txtDocName;
+        private TextBox        txtBookNo, txtDocName;
         private DateTimePicker dtpCommission;
 
         public EditSubmissionDialog(Submission s)
         {
             Updated         = s;
             Text            = $"Edit — {s.DocumentName}";
-            Size            = new Size(440, 370);
+            Size            = new Size(440, 280);   // shorter form
             StartPosition   = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox     = false;
             Font            = new Font("Segoe UI", 9.5f);
             BackColor       = Color.White;
 
-            int[] ys = { 16, 70, 124, 178, 232 };
+            int[] ys = { 16, 70, 124 };   // only 3 rows now
 
             Label L(string t, int y, bool req = false) => new Label
             {
@@ -412,25 +439,25 @@ namespace LegalOfficeApp
             TextBox T(string v, int y, int x = 16, int w = 394) => new TextBox
                 { Text = v, Location = new Point(x, y + 20), Width = w, Font = new Font("Segoe UI", 10f) };
 
-            var lblDocName = L("Document Name *", ys[0], req: true); txtDocName = T(s.DocumentName, ys[0]);
-            var lblBook    = L("Book Number",     ys[1]);             txtBookNo  = T(s.BookNumber,   ys[1]);
-            var lblName    = L("Notary Full Name",ys[2]);             txtName    = T(s.NotaryName,   ys[2]);
-            var lblPTR     = L("PTR Number",      ys[3]);             txtPTR     = T(s.PtrNumber,    ys[3]);
-            var lblIBP     = L("IBP Number",      ys[4], false);      txtIBP     = T(s.IbpNumber,    ys[4], 16, 180);
-
-            var lblDate = L("Date of Commission *", ys[4], req: true);
-            lblDate.Location = new Point(210, ys[4]);
+            var lblDocName = L("Document Name *", ys[0], req: true); 
+            txtDocName = T(s.DocumentName, ys[0]);
+            
+            var lblBook = L("Book Number", ys[1]);             
+            txtBookNo = T(s.BookNumber, ys[1]);
+            
+            var lblDate = L("Date of Commission *", ys[2], req: true);
             dtpCommission = new DateTimePicker
             {
                 Format   = DateTimePickerFormat.Short,
-                Location = new Point(210, ys[4] + 20),
-                Width    = 200,
+                Location = new Point(16, ys[2] + 20),
+                Width    = 410,
                 Font     = new Font("Segoe UI", 10f)
             };
-            if (DateTime.TryParse(s.DateOfCommission, out var doc)) dtpCommission.Value = doc;
+            if (DateTime.TryParse(s.DateOfCommission, out var doc)) 
+                dtpCommission.Value = doc;
 
-            var btnSave   = AB("Save",   Color.FromArgb(10, 26, 107), new Point(16,  286));
-            var btnCancel = AB("Cancel", Color.FromArgb(90, 90, 90),  new Point(136, 286));
+            var btnSave   = AB("Save",   Color.FromArgb(10, 26, 107), new Point(16,  196));
+            var btnCancel = AB("Cancel", Color.FromArgb(90, 90, 90),  new Point(136, 196));
 
             btnSave.Click += (_, __) =>
             {
@@ -441,10 +468,7 @@ namespace LegalOfficeApp
                     return;
                 }
                 Updated.DocumentName     = txtDocName.Text.Trim();
-                Updated.BookNumber       = txtBookNo .Text.Trim();
-                Updated.NotaryName       = txtName   .Text.Trim();
-                Updated.PtrNumber        = txtPTR    .Text.Trim();
-                Updated.IbpNumber        = txtIBP    .Text.Trim();
+                Updated.BookNumber       = txtBookNo.Text.Trim();
                 Updated.DateOfCommission = dtpCommission.Value.ToShortDateString();
                 DialogResult = DialogResult.OK;
                 Close();
@@ -453,8 +477,9 @@ namespace LegalOfficeApp
 
             Controls.AddRange(new Control[]
             {
-                lblDocName, txtDocName, lblBook, txtBookNo, lblName, txtName,
-                lblPTR, txtPTR, lblIBP, txtIBP, lblDate, dtpCommission,
+                lblDocName, txtDocName, 
+                lblBook, txtBookNo, 
+                lblDate, dtpCommission,
                 btnSave, btnCancel
             });
         }

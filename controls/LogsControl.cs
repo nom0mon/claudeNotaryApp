@@ -52,7 +52,7 @@ namespace LegalOfficeApp
                 cboAction.Items.AddRange(new object[]
                 {
                     "All Actions", "Submission", "Approval", "Rejection",
-                    "Edit", "Deletion", "Login", "Logout", "Warning"
+                    "Edit", "Deletion", "Warning"
                 });
             }
             cboAction.SelectedIndex         = 0;
@@ -154,9 +154,12 @@ namespace LegalOfficeApp
             DateTime? from         = dtpFrom?.Value.Date;
             DateTime? to           = dtpTo?.Value.Date;
             string? categoryFilter = SessionManager.IsAdmin ? null : "file";
-
+        
             _logs = await FirestoreService.Instance.GetLogsAsync(
                 actionFilter, from, to, categoryFilter);
+
+            if (!SessionManager.IsAdmin)
+                list = list.Where(l => l.Action != "Login" && l.Action != "Logout").ToList();
 
             dgv.Rows.Clear();
             foreach (var log in _logs)

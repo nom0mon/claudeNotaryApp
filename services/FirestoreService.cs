@@ -92,7 +92,6 @@ namespace LegalOfficeApp
                 ProjectId = projectId,
                 JsonCredentials = json
             }.Build();
-
             // _db = FirestoreDb.Create(projectId, db);
         }
 
@@ -182,6 +181,47 @@ namespace LegalOfficeApp
         public async Task DeleteUserAsync(string id)
         {
             await _db.Collection(ColUsers).Document(id).DeleteAsync();
+        }
+
+        public async Task<List<string>> GetEmailRecipientsAsync()
+        {
+            var snap = await _db.Collection("config")
+                                .Document("email_recipients")
+                                .GetSnapshotAsync();
+
+            if (!snap.Exists || !snap.ContainsField("addresses"))
+                return new List<string>();
+
+            return snap.GetValue<List<object>>("addresses")
+                    .Select(x => x.ToString() ?? "")
+                    .Where(x => !string.IsNullOrEmpty(x))
+                    .ToList();
+        }
+
+        public async Task SaveEmailRecipientAsync(string email)
+        {
+            var existing = await GetEmailRecipientsAsync();
+            if (existing.Contains(email)) return;   // no duplicates
+
+            existing.Add(email);
+
+            await _db.Collection("config")
+                    .Document("email_recipients")
+                    .SetAsync(new Dictionary<string, object>
+                    {
+                        ["addresses"] = existing
+                    });
+        }
+
+        // ── Expose GmailService ──────────────────────────────────
+        private GmailService? _gmail;
+        public GmailService Gmail => _gmail ??= new GmailService(_db);
+
+        public async Task<string> GetDefaultRecipientAsync()
+        {
+            var snap = await _db.Collection("config").Document("email").GetSnapshotAsync();
+            if (!snap.Exists || !snap.ContainsField("recipient_email")) return "";
+            return snap.GetValue<string>("recipient_email");
         }
 
         public async Task ChangePasswordAsync(string id, string newPlainPassword)
@@ -325,7 +365,6 @@ namespace LegalOfficeApp
                 ["category"]  = category
             });
         }
-
         public async Task<List<ActivityLog>> GetLogsAsync(
             string?   actionFilter   = null,
             DateTime? from           = null,
@@ -334,25 +373,27 @@ namespace LegalOfficeApp
         {
             Query q = _db.Collection(ColLogs);
 
+            // Only apply ONE Firestore-side filter to avoid composite index requirement
+            // Apply action OR category on Firestore, rest client-side
             if (!string.IsNullOrEmpty(actionFilter))
                 q = q.WhereEqualTo("action", actionFilter);
-
-            if (!string.IsNullOrEmpty(categoryFilter))
-                q = q.WhereEqualTo("category", categoryFilter);
 
             QuerySnapshot snap = await q.OrderByDescending("timestamp").GetSnapshotAsync();
 
             var list = snap.Documents.Select(DocToLog).ToList();
 
-            // Date range filter client-side (avoids composite index requirement)
+            // Everything else filtered client-side
+            if (!string.IsNullOrEmpty(categoryFilter))
+                list = list.Where(l => l.Category == categoryFilter).ToList();
+
             if (from.HasValue)
-                list = list.Where(l => l.Timestamp.Date >= from.Value.Date).ToList();
+                list = list.Where(l => l.Timestamp.ToLocalTime().Date >= from.Value.Date).ToList();
+
             if (to.HasValue)
-                list = list.Where(l => l.Timestamp.Date <= to.Value.Date).ToList();
+                list = list.Where(l => l.Timestamp.ToLocalTime().Date <= to.Value.Date).ToList();
 
             return list;
         }
-
         // ════════════════════════════════════════════════════════
         //  HELPERS
         // ════════════════════════════════════════════════════════

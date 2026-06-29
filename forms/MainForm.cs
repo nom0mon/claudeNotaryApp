@@ -41,11 +41,24 @@ namespace LegalOfficeApp
             ApplyIcon();
             BuildLayout();
             OpenPage(ucDashboard, btnDashboard, "DASHBOARD");
+            var asm = Assembly.GetExecutingAssembly();
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
+
+            if (SessionManager.Current != null)
+            {
+                if (!Confirm("Exit the application?"))
+                {
+                    e.Cancel = true;
+                }
+            }
         }
 
          private void ApplyIcon()
         {
-            // 1. Try next to the .exe (deployment)
             string exeDir  = AppDomain.CurrentDomain.BaseDirectory;
             string[] paths = {
                 Path.Combine(exeDir, "logo.ico"),
@@ -161,20 +174,13 @@ namespace LegalOfficeApp
             btnTracking  .Click += (s, e) => OpenPage(ucTracking,   btnTracking,   "SUBMISSION TRACKING");
             btnLogs      .Click += (s, e) => OpenPage(ucLogs,       btnLogs,       "ACTIVITY LOGS");
             btnUsers     .Click += (s, e) => OpenPage(ucUsers,      btnUsers,      "USER MANAGEMENT");
-            btnSignOut   .Click += (s, e) => 
+            btnSignOut.Click += (s, e) =>
             {
-                SessionManager.Logout();
-                this.Hide();                    // hide instead of close
+                if (!Confirm("Sign out?"))
+                    return;
 
-                // Hide main window, show login
-                var login = new LoginForm();
-                login.Show();
-                // When login window itself closes (user exits from there), exit the app
-                login.FormClosed += (ls, le) =>
-                {
-                    if (SessionManager.Current == null)   // didn't log back in
-                        Application.Exit();
-                };
+                SessionManager.Logout();
+                Close();
             };
 
             // User Management is admin-only
@@ -183,12 +189,12 @@ namespace LegalOfficeApp
             panelMenu.Controls.Add(btnSignOut);
             if (SessionManager.IsAdmin)
                 panelMenu.Controls.Add(btnUsers);
-            panelMenu.Controls.Add(btnLogs);
-            panelMenu.Controls.Add(btnTracking);
-            panelMenu.Controls.Add(btnSubmission);
-            panelMenu.Controls.Add(btnDashboard);
-            panelMenu.Controls.Add(logo);
-            panelMenu.Controls.Add(btnNavIcon);
+                panelMenu.Controls.Add(btnLogs);
+                panelMenu.Controls.Add(btnTracking);
+                panelMenu.Controls.Add(btnSubmission);
+                panelMenu.Controls.Add(btnDashboard);
+                panelMenu.Controls.Add(logo);
+                panelMenu.Controls.Add(btnNavIcon);
 
             this.Controls.Add(panelMenu);
         }

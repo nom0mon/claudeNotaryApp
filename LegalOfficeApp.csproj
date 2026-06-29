@@ -8,27 +8,30 @@
     <AssemblyName>LegalOfficeApp</AssemblyName>
     <RootNamespace>LegalOfficeApp</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>logo.ico</ApplicationIcon>
+    <ApplicationIcon>res\logo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Firestore (replaces SQLite) -->
     <PackageReference Include="Google.Cloud.Firestore" Version="4.3.0" />
+    <PackageReference Include="MailKit" Version="4.17.0" />
     <!-- MEGA upload -->
     <PackageReference Include="MegaApiClient" Version="1.10.5" />
+    <PackageReference Include="MimeKit" Version="4.17.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="logo.ico" />
- 
-    <!-- Also copy it next to the .exe for the runtime File.Exists() fallback -->
-    <None Update="logo.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    <EmbeddedResource Include="res\logo.ico">
+        <LogicalName>logo.ico</LogicalName>
+    </EmbeddedResource>
+    <None Update="res\logo.ico">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
 
+
     <!-- Firebase service account credentials — NEVER commit this file to git -->
-    <EmbeddedResource Include="firebase-credentials.json">
-      <LogicalName>firebase-credentials.json</LogicalName>
+    <EmbeddedResource Include="res\firebase-credentials.json">
+        <LogicalName>firebase-credentials.json</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 
