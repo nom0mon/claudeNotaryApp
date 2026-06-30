@@ -18,11 +18,20 @@ namespace LegalOfficeApp
         private Label          lblAttachedFile;
         private Button         btnSubmit, btnClear, btnAddMore, btnRemove;
         private ListBox        lstFiles;
-        private Panel          uploadZone;
+        private UploadZonePanel         uploadZone;
 
         // Each entry: (localFilePath, displayName)
         private readonly List<(string Path, string Name)> _attachedFiles = new();
-
+        private class UploadZonePanel : Panel
+{
+        public UploadZonePanel()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.UserPaint |
+                    ControlStyles.OptimizedDoubleBuffer |
+                    ControlStyles.ResizeRedraw, true);
+        }
+    }
         public SubmissionControl()
         {
             this.BackColor  = Color.FromArgb(240, 240, 240);
@@ -62,7 +71,7 @@ namespace LegalOfficeApp
             var attachCard = Card("Attach Notarial Books (PDF)", 230);
 
             // Drop zone — click to add files
-            uploadZone = new Panel
+            uploadZone = new UploadZonePanel
             {
                 Dock      = DockStyle.Top,
                 Height    = 60,
