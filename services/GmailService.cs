@@ -109,10 +109,6 @@ namespace LegalOfficeApp
                           <td style="padding:4px 16px;font-weight:600;">{submission.DocumentName}</td>
                         </tr>
                         <tr>
-                          <td style="padding:4px 0;color:#555;">Notary Name</td>
-                          <td style="padding:4px 16px;">{submission.NotaryName}</td>
-                        </tr>
-                        <tr>
                           <td style="padding:4px 0;color:#555;">Date of Commission</td>
                           <td style="padding:4px 16px;">{submission.DateOfCommission}</td>
                         </tr>
@@ -159,108 +155,112 @@ namespace LegalOfficeApp
         }
     
       public async Task SendBatchDocumentAsync(
-          string       toEmail,
-          string       toName,
-          List<string> filePaths,
-          List<string> fileNames,
-          List<string> documentNames,
-          string?      notes = null)
-      {
-          await EnsureConfigLoadedAsync();
+        string       toEmail,
+        string       toName,
+        List<string> filePaths,
+        List<string> fileNames,
+        List<string> documentNames,
+        string?      notes  = null,
+        string?      sentBy = null)   // <-- ADD THIS
+    {
+        await EnsureConfigLoadedAsync();
 
-          // Validate all files exist before connecting to SMTP
-          var missing = filePaths.Where(p => !File.Exists(p)).ToList();
-          if (missing.Any())
-              throw new FileNotFoundException(
-                  $"The following files were not found:\n{string.Join("\n", missing)}");
+        var missing = filePaths.Where(p => !File.Exists(p)).ToList();
+        if (missing.Any())
+            throw new FileNotFoundException(
+                $"The following files were not found:\n{string.Join("\n", missing)}");
 
-          string notesRow = string.IsNullOrWhiteSpace(notes)
-              ? ""
-              : $"<tr><td style='padding:4px 0;color:#555;'>Notes</td>" +
-                $"<td style='padding:4px 16px;'>{notes}</td></tr>";
+        string notesRow = string.IsNullOrWhiteSpace(notes)
+            ? ""
+            : $"<tr><td style='padding:4px 0;color:#555;'>Notes</td>" +
+              $"<td style='padding:4px 16px;'>{notes}</td></tr>";
 
-          // Build document list for email body
-          string docRows = string.Join("", documentNames.Select((name, i) =>
-              $"<tr><td style='padding:4px 8px;border-bottom:1px solid #eee;'>{i + 1}</td>" +
-              $"<td style='padding:4px 8px;border-bottom:1px solid #eee;font-weight:600;'>{name}</td>" +
-              $"<td style='padding:4px 8px;border-bottom:1px solid #eee;color:#666;'>{fileNames[i]}</td></tr>"));
+        string docRows = string.Join("", documentNames.Select((name, i) =>
+            $"<tr><td style='padding:4px 8px;border-bottom:1px solid #eee;'>{i + 1}</td>" +
+            $"<td style='padding:4px 8px;border-bottom:1px solid #eee;font-weight:600;'>{name}</td>" +
+            $"<td style='padding:4px 8px;border-bottom:1px solid #eee;color:#666;'>{fileNames[i]}</td></tr>"));
 
-          string html = $"""
-              <!DOCTYPE html>
-              <html>
-              <body style="font-family:Arial,sans-serif;background:#f5f6fa;padding:32px;">
-                <div style="max-width:580px;margin:auto;background:#fff;border-radius:8px;
-                            box-shadow:0 2px 8px rgba(0,0,0,.08);overflow:hidden;">
-                  <div style="background:#0a1a6b;padding:24px 32px;">
-                    <h2 style="color:#fff;margin:0;font-size:18px;">Batch Document Transmittal</h2>
-                    <p style="color:#b3c0e8;margin:4px 0 0;font-size:13px;">
-                      Legal Office – Calamba City
-                    </p>
-                  </div>
-                  <div style="padding:28px 32px;">
-                    <p style="color:#222;">Dear <strong>{toName}</strong>,</p>
-                    <p style="color:#444;">
-                      Please find the attached documents ({filePaths.Count} file{(filePaths.Count > 1 ? "s" : "")})
-                      from the Legal Office – Calamba City.
-                    </p>
-                    <table style="border-collapse:collapse;width:100%;margin:16px 0;
-                                  border:1px solid #eee;border-radius:4px;">
-                      <thead>
-                        <tr style="background:#f5f5f8;">
-                          <th style="padding:8px;text-align:left;color:#555;font-size:12px;">#</th>
-                          <th style="padding:8px;text-align:left;color:#555;font-size:12px;">Document</th>
-                          <th style="padding:8px;text-align:left;color:#555;font-size:12px;">File</th>
-                        </tr>
-                      </thead>
-                      <tbody>{docRows}</tbody>
-                    </table>
-                    <table style="border-collapse:collapse;width:100%;margin:16px 0;">
-                      <tr>
-                        <td style="padding:4px 0;color:#555;">Sent By</td>
-                        <td style="padding:4px 16px;">{SessionManager.Current?.FullName}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:4px 0;color:#555;">Date Sent</td>
-                        <td style="padding:4px 16px;">{DateTime.Now:MMMM dd, yyyy – hh:mm tt}</td>
-                      </tr>
-                      {notesRow}
-                    </table>
-                    <p style="color:#888;font-size:12px;margin-top:24px;">
-                      This document batch was transmitted via the Legal Office document management system.
-                    </p>
-                  </div>
-                  <div style="background:#f0f2fb;padding:16px 32px;text-align:center;">
-                    <p style="color:#999;font-size:11px;margin:0;">
-                      Legal Office – Calamba City · City Hall, Calamba, Laguna
-                    </p>
-                  </div>
+        // ── USE sentBy PARAMETER, fall back to session, then "System" ──
+        string senderName = sentBy
+            ?? SessionManager.Current?.FullName
+            ?? "System (Scheduled)";
+
+        string html = $"""
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family:Arial,sans-serif;background:#f5f6fa;padding:32px;">
+              <div style="max-width:580px;margin:auto;background:#fff;border-radius:8px;
+                          box-shadow:0 2px 8px rgba(0,0,0,.08);overflow:hidden;">
+                <div style="background:#0a1a6b;padding:24px 32px;">
+                  <h2 style="color:#fff;margin:0;font-size:18px;">Batch Document Transmittal</h2>
+                  <p style="color:#b3c0e8;margin:4px 0 0;font-size:13px;">
+                    Legal Office – Calamba City
+                  </p>
                 </div>
-              </body>
-              </html>
-              """;
+                <div style="padding:28px 32px;">
+                  <p style="color:#222;">Dear <strong>{toName}</strong>,</p>
+                  <p style="color:#444;">
+                    Please find the attached documents ({filePaths.Count} file{(filePaths.Count > 1 ? "s" : "")})
+                    from the Legal Office – Calamba City.
+                  </p>
+                  <table style="border-collapse:collapse;width:100%;margin:16px 0;
+                                border:1px solid #eee;border-radius:4px;">
+                    <thead>
+                      <tr style="background:#f5f5f8;">
+                        <th style="padding:8px;text-align:left;color:#555;font-size:12px;">#</th>
+                        <th style="padding:8px;text-align:left;color:#555;font-size:12px;">Document</th>
+                        <th style="padding:8px;text-align:left;color:#555;font-size:12px;">File</th>
+                      </tr>
+                    </thead>
+                    <tbody>{docRows}</tbody>
+                  </table>
+                  <table style="border-collapse:collapse;width:100%;margin:16px 0;">
+                    <tr>
+                      <td style="padding:4px 0;color:#555;">Sent By</td>
+                      <td style="padding:4px 16px;">{senderName}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:4px 0;color:#555;">Date Sent</td>
+                      <td style="padding:4px 16px;">{DateTime.Now:MMMM dd, yyyy – hh:mm tt}</td>
+                    </tr>
+                    {notesRow}
+                  </table>
+                  <p style="color:#888;font-size:12px;margin-top:24px;">
+                    This document batch was transmitted via the Legal Office document management system.
+                  </p>
+                </div>
+                <div style="background:#f0f2fb;padding:16px 32px;text-align:center;">
+                  <p style="color:#999;font-size:11px;margin:0;">
+                    Legal Office – Calamba City · City Hall, Calamba, Laguna
+                  </p>
+                </div>
+              </div>
+            </body>
+            </html>
+            """;
 
-          var message = new MimeMessage();
-          message.From.Add(new MailboxAddress(_displayName, _senderEmail));
-          message.To.Add(new MailboxAddress(toName, toEmail));
-          message.Subject = $"Batch Document Transmittal – {filePaths.Count} File{(filePaths.Count > 1 ? "s" : "")} – {DateTime.Now:MMM dd, yyyy}";
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(_displayName, _senderEmail));
+        message.To.Add(new MailboxAddress(toName, toEmail));
+        message.Subject = $"Batch Document Transmittal – {filePaths.Count} File{(filePaths.Count > 1 ? "s" : "")} – {DateTime.Now:MMM dd, yyyy}";
 
-          var builder = new BodyBuilder
-          {
-              HtmlBody = html,
-              TextBody = System.Text.RegularExpressions.Regex
-                            .Replace(html, "<[^>]+>", " ").Trim()
-          };
+        var builder = new BodyBuilder
+        {
+            HtmlBody = html,
+            TextBody = System.Text.RegularExpressions.Regex
+                          .Replace(html, "<[^>]+>", " ").Trim()
+        };
 
-          foreach (var path in filePaths)
-              builder.Attachments.Add(path);
+        foreach (var path in filePaths)
+            builder.Attachments.Add(path);
 
-          message.Body = builder.ToMessageBody();
+        message.Body = builder.ToMessageBody();
 
-          using var smtp = new SmtpClient();
-          await smtp.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
-          await smtp.AuthenticateAsync(_senderEmail, _appPassword);
-          await smtp.SendAsync(message);
-          await smtp.DisconnectAsync(true);
-      }
+        using var smtp = new SmtpClient();
+        await smtp.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
+        await smtp.AuthenticateAsync(_senderEmail, _appPassword);
+        await smtp.SendAsync(message);
+        await smtp.DisconnectAsync(true);
+    }
     }
 }

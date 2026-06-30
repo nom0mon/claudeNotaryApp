@@ -20,7 +20,7 @@ namespace LegalOfficeApp
 
         private readonly string[] _fullText = {
             "⊞   Dashboard",
-            "↑   Notarial Submission",
+            "↑   Document Submission",
             "⊟   Submission Tracking",
             "↺   Activity Logs",
             "👤   User Management",
@@ -41,14 +41,23 @@ namespace LegalOfficeApp
         public MainForm()
         {
             InitializeComponent();
+            SchedulerService.Instance.Start();
             ApplyIcon();
             BuildLayout();
             OpenPage(ucDashboard, btnDashboard, "DASHBOARD");
         }
 
+
+        private bool _isSigningOut = false;
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            base.OnFormClosing(e);
+            if (_isSigningOut)
+            {
+                SchedulerService.Instance.Stop();
+                base.OnFormClosing(e);
+                return; // let it close cleanly, no exit prompt
+            }
 
             if (e.CloseReason == CloseReason.UserClosing)
             {
@@ -57,6 +66,7 @@ namespace LegalOfficeApp
                     e.Cancel = true;
                     return;
                 }
+                SchedulerService.Instance.Stop();
                 SessionManager.Logout();
                 Application.Exit();
             }
@@ -180,16 +190,10 @@ namespace LegalOfficeApp
             btnScheduling.Click += (s, e) => OpenPage(ucScheduling,  btnScheduling, "SCHEDULING");
             btnSignOut   .Click += (s, e) =>
             {
-                if (!Confirm("Sign out?")) return;
-                SessionManager.Logout();
-                this.Hide();
-                var login = new LoginForm();
-                login.Show();
-                login.FormClosed += (ls, le) =>
-                {
-                    if (SessionManager.Current == null)
-                        Application.Exit();
-                };
+                 if (!Confirm("Sign out?")) return;
+                    _isSigningOut = true;
+                    SessionManager.Logout();
+                    this.Close();
             };
 
             // Admin-only controls

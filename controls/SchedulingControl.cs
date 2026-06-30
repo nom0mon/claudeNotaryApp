@@ -112,7 +112,16 @@ namespace LegalOfficeApp
             string status = cboStatus?.SelectedItem?.ToString() ?? "All";
             string? filter = status == "All" ? null : status;
 
-            _schedules = await FirestoreService.Instance.GetSchedulesAsync(filter);
+            try
+            {
+                _schedules = await FirestoreService.Instance.GetSchedulesAsync(filter);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load schedules:\n{ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
 
             dgv.Rows.Clear();
             foreach (var s in _schedules)
@@ -129,15 +138,13 @@ namespace LegalOfficeApp
                     s.CreatedBy,
                     s.Status);
 
-                // Hide cancel button for non-pending
-                if (s.Status != "Pending")
+                if (s.Status != "Pending" && s.Status != "Failed")
                     dgv.Rows[idx].Cells["Cancel"].Value = "";
             }
 
             if (dgv.Rows.Count == 0)
                 dgv.Rows.Add("", "—", "—", "No schedules found", "—", "—");
         }
-
         private void Dgv_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
         {
             if (e.ColumnIndex == dgv.Columns["Status"].Index && e.Value != null)
@@ -155,6 +162,14 @@ namespace LegalOfficeApp
                     case "Cancelled":
                         e.CellStyle.ForeColor = Color.FromArgb(163, 45, 45);
                         e.CellStyle.BackColor = Color.FromArgb(252, 235, 235);
+                        break;
+                    case "Sending":
+                        e.CellStyle.ForeColor = Color.FromArgb(10, 26, 107);
+                        e.CellStyle.BackColor = Color.FromArgb(220, 230, 255);
+                        break;
+                    case "Failed":
+                        e.CellStyle.ForeColor = Color.FromArgb(163, 45, 45);
+                        e.CellStyle.BackColor = Color.FromArgb(255, 220, 220);
                         break;
                 }
                 e.CellStyle.Font = new Font("Segoe UI", 9f, FontStyle.Bold);

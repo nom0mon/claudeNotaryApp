@@ -106,7 +106,6 @@ namespace LegalOfficeApp
             dgvRecent.ColumnHeadersHeightSizeMode             = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
 
             dgvRecent.Columns.Add("DocName",   "Document Name");
-            dgvRecent.Columns.Add("Notary",    "Notary Name");
             dgvRecent.Columns.Add("Submitted", "Date Submitted");
             dgvRecent.Columns.Add("Status",    "Status");
 

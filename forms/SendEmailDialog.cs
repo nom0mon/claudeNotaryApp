@@ -89,71 +89,101 @@ namespace LegalOfficeApp
         {
             var page = new TabPage("  Send Now  ") { BackColor = Color.White };
 
-            var lblRecipient = L("Recipient Email *", 16);
-            txtRecipientNow  = Combo(84);
+            const int leftX  = 16;
+            const int rightW = 446;
+            int       y      = 12;
 
-            var lblNotes = L("Notes (optional)", 120);
-            txtNotesNow  = new TextBox
-            {
-                Location    = new Point(16, 140),
-                Size        = new Size(446, 68),
-                Multiline   = true,
-                Font        = new Font("Segoe UI", 9.5f),
-                BorderStyle = BorderStyle.FixedSingle
-            };
-
-            lblStatusNow = new Label
-            {
-                Location  = new Point(16, 218),
-                Size      = new Size(446, 20),
-                Font      = new Font("Segoe UI", 8.5f),
-                ForeColor = Color.Gray
-            };
-
-            btnSendNow = Btn("📧  Send Now", Navy, new Point(16, 244));
-            btnSendNow.Click += BtnSendNow_Click;
-
-            var btnCancel = Btn("Cancel", Color.FromArgb(90, 90, 90), new Point(166, 244));
-            btnCancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
-
-            // File list if batch
+            // ── Optional batch file list ─────────────────────────────────
             if (_submissions.Count > 1)
             {
-                var lblFiles = L($"Attachments ({_submissions.Count} files):", 16);
+                page.Controls.Add(new Label
+                {
+                    Text      = $"Attachments ({_submissions.Count} files):",
+                    Location  = new Point(leftX, y),
+                    AutoSize  = true,
+                    ForeColor = Color.FromArgb(80, 80, 80)
+                });
+                y += 18;
+
                 var lstFiles = new ListBox
                 {
-                    Location  = new Point(16, 36),
-                    Size      = new Size(446, 44),
-                    Font      = new Font("Segoe UI", 8.5f),
-                    BackColor = Color.FromArgb(248, 249, 252),
+                    Location    = new Point(leftX, y),
+                    Size        = new Size(rightW, 56),
+                    Font        = new Font("Segoe UI", 8.5f),
+                    BackColor   = Color.FromArgb(248, 249, 252),
                     BorderStyle = BorderStyle.FixedSingle
                 };
                 foreach (var s in _submissions)
                     lstFiles.Items.Add($"  📄 {s.DocumentName}  ({s.FileName})");
-
-                // Shift controls down
-                lblRecipient.Location = new Point(16, 90);
-                txtRecipientNow.Location = new Point(16, 110);
-                lblNotes.Location = new Point(16, 148);
-                txtNotesNow.Location = new Point(16, 168);
-                lblStatusNow.Location = new Point(16, 246);
-                btnSendNow.Location = new Point(16, 272);
-                btnCancel.Location  = new Point(166, 272);
-
-                page.Controls.AddRange(new Control[]
-                    { lblFiles, lstFiles, lblRecipient, txtRecipientNow,
-                      lblNotes, txtNotesNow, lblStatusNow, btnSendNow, btnCancel });
+                page.Controls.Add(lstFiles);
+                y += 62;
             }
-            else
+
+            // ── Recipient ────────────────────────────────────────────────
+            page.Controls.Add(new Label
             {
-                page.Controls.AddRange(new Control[]
-                    { lblRecipient, txtRecipientNow,
-                      lblNotes, txtNotesNow, lblStatusNow, btnSendNow, btnCancel });
-            }
+                Text      = "Recipient Email *",
+                Location  = new Point(leftX, y),
+                AutoSize  = true,
+                ForeColor = Color.FromArgb(80, 80, 80)
+            });
+            y += 18;
+
+            txtRecipientNow = new ComboBox
+            {
+                Location           = new Point(leftX, y),
+                Width              = rightW,
+                Font               = new Font("Segoe UI", 10f),
+                DropDownStyle      = ComboBoxStyle.DropDown,
+                AutoCompleteMode   = AutoCompleteMode.SuggestAppend,
+                AutoCompleteSource = AutoCompleteSource.ListItems
+            };
+            page.Controls.Add(txtRecipientNow);
+            y += 32;
+
+            // ── Notes ────────────────────────────────────────────────────
+            page.Controls.Add(new Label
+            {
+                Text      = "Notes (optional)",
+                Location  = new Point(leftX, y),
+                AutoSize  = true,
+                ForeColor = Color.FromArgb(80, 80, 80)
+            });
+            y += 18;
+
+            txtNotesNow = new TextBox
+            {
+                Location    = new Point(leftX, y),
+                Size        = new Size(rightW, 70),
+                Multiline   = true,
+                Font        = new Font("Segoe UI", 9.5f),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            page.Controls.Add(txtNotesNow);
+            y += 76;
+
+            // ── Status label ─────────────────────────────────────────────
+            lblStatusNow = new Label
+            {
+                Location  = new Point(leftX, y),
+                Size      = new Size(rightW, 18),
+                Font      = new Font("Segoe UI", 8.5f),
+                ForeColor = Color.Gray
+            };
+            page.Controls.Add(lblStatusNow);
+            y += 22;
+
+            // ── Buttons ──────────────────────────────────────────────────
+            btnSendNow = Btn("📧  Send Now", Navy, new Point(leftX, y));
+            btnSendNow.Click += BtnSendNow_Click;
+            page.Controls.Add(btnSendNow);
+
+            var btnCancel = Btn("Cancel", Color.FromArgb(90, 90, 90), new Point(leftX + 150, y));
+            btnCancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+            page.Controls.Add(btnCancel);
 
             return page;
         }
-
         // ── SCHEDULE TAB ─────────────────────────────────────────
         private TabPage BuildScheduleTab()
         {

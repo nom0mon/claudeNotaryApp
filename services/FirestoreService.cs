@@ -18,8 +18,6 @@ namespace LegalOfficeApp
         public string   Id               { get; set; } = "";   // Firestore document ID
         public string   BookNumber       { get; set; } = "";
         public string   NotaryName       { get; set; } = "";
-        public string   PtrNumber        { get; set; } = "";
-        public string   IbpNumber        { get; set; } = "";
         public string   DateOfCommission { get; set; } = "";
         public string   DocumentName     { get; set; } = "";
         public string   MegaLink         { get; set; } = "";
@@ -253,8 +251,6 @@ namespace LegalOfficeApp
                 {
                     ["bookNumber"]       = s.BookNumber,
                     ["notaryName"]       = s.NotaryName,
-                    ["ptrNumber"]        = s.PtrNumber,
-                    ["ibpNumber"]        = s.IbpNumber,
                     ["dateOfCommission"] = s.DateOfCommission,
                     ["documentName"]     = s.DocumentName
                 });
@@ -296,33 +292,74 @@ namespace LegalOfficeApp
         }
 
         /// <summary>
-        /// Returns submissions filtered by status and/or notary name.
+        /// Returns submissions filtered by status
         /// Ordered by dateSubmitted descending.
         /// </summary>
-        public async Task<List<Submission>> GetSubmissionsAsync(
-            string? statusFilter = null,
-            string? nameSearch   = null)
+      public async Task<List<Submission>> GetSubmissionsAsync(
+        string? statusFilter = null,
+        string? nameSearch   = null)
+    {
+        QuerySnapshot snap = await _db.Collection(ColSubmissions)
+                                    .OrderByDescending("dateSubmitted")
+                                    .GetSnapshotAsync();
+
+        var list = snap.Documents.Select(DocToSubmission).ToList();
+
+        if (!string.IsNullOrEmpty(statusFilter))
+            list = list.Where(s => s.Status == statusFilter).ToList();
+
+        if (!string.IsNullOrEmpty(nameSearch))
         {
-            Query q = _db.Collection(ColSubmissions);
-
-            if (!string.IsNullOrEmpty(statusFilter))
-                q = q.WhereEqualTo("status", statusFilter);
-
-            // Firestore doesn't support LIKE; fetch all and filter client-side for name search
-            QuerySnapshot snap = await q.OrderByDescending("dateSubmitted").GetSnapshotAsync();
-
-            var list = snap.Documents
-                           .Select(DocToSubmission)
-                           .ToList();
-
-            if (!string.IsNullOrEmpty(nameSearch))
-            {
-                string lower = nameSearch.ToLower();
-                list = list.Where(s => s.NotaryName.ToLower().Contains(lower)).ToList();
-            }
-
-            return list;
+            string lower = nameSearch.ToLower();
+            list = list.Where(s =>
+                s.DocumentName.ToLower().Contains(lower) ||
+                s.NotaryName  .ToLower().Contains(lower)
+            ).ToList();
         }
+
+        return list;
+}
+    public async Task<List<ActivityLog>> GetLogsAsync(
+        string?   actionFilter   = null,
+        DateTime? from           = null,
+        DateTime? to             = null,
+        string?   categoryFilter = null)
+    {
+        // No Firestore-side filters — fetch all and filter entirely client-side
+        // to avoid composite index requirement and filter conflicts
+        QuerySnapshot snap = await _db.Collection(ColLogs)
+                                    .OrderByDescending("timestamp")
+                                    .GetSnapshotAsync();
+
+        var list = snap.Documents.Select(DocToLog).ToList();
+
+        if (!string.IsNullOrEmpty(actionFilter))
+            list = list.Where(l => l.Action == actionFilter).ToList();
+
+        if (!string.IsNullOrEmpty(categoryFilter))
+            list = list.Where(l => l.Category == categoryFilter).ToList();
+
+        if (from.HasValue)
+            list = list.Where(l => l.Timestamp.ToLocalTime().Date >= from.Value.Date).ToList();
+
+        if (to.HasValue)
+            list = list.Where(l => l.Timestamp.ToLocalTime().Date <= to.Value.Date).ToList();
+
+        return list;
+    }
+
+    // Add batch delete method
+    public async Task BatchDeleteSubmissionsAsync(List<string> ids)
+    {
+        // Firestore batch writes are capped at 500 ops — chunk just in case
+        foreach (var chunk in ids.Chunk(400))
+        {
+            var batch = _db.StartBatch();
+            foreach (var id in chunk)
+                batch.Delete(_db.Collection(ColSubmissions).Document(id));
+            await batch.CommitAsync();
+        }
+    }
 
         public async Task<(int Total, int Pending, int Approved, int Rejected)>
             GetDashboardCountsAsync()
@@ -365,35 +402,6 @@ namespace LegalOfficeApp
                 ["category"]  = category
             });
         }
-        public async Task<List<ActivityLog>> GetLogsAsync(
-            string?   actionFilter   = null,
-            DateTime? from           = null,
-            DateTime? to             = null,
-            string?   categoryFilter = null)
-        {
-            Query q = _db.Collection(ColLogs);
-
-            // Only apply ONE Firestore-side filter to avoid composite index requirement
-            // Apply action OR category on Firestore, rest client-side
-            if (!string.IsNullOrEmpty(actionFilter))
-                q = q.WhereEqualTo("action", actionFilter);
-
-            QuerySnapshot snap = await q.OrderByDescending("timestamp").GetSnapshotAsync();
-
-            var list = snap.Documents.Select(DocToLog).ToList();
-
-            // Everything else filtered client-side
-            if (!string.IsNullOrEmpty(categoryFilter))
-                list = list.Where(l => l.Category == categoryFilter).ToList();
-
-            if (from.HasValue)
-                list = list.Where(l => l.Timestamp.ToLocalTime().Date >= from.Value.Date).ToList();
-
-            if (to.HasValue)
-                list = list.Where(l => l.Timestamp.ToLocalTime().Date <= to.Value.Date).ToList();
-
-            return list;
-        }
         // ════════════════════════════════════════════════════════
         //  HELPERS
         // ════════════════════════════════════════════════════════
@@ -411,8 +419,6 @@ namespace LegalOfficeApp
             {
                 ["bookNumber"]       = s.BookNumber,
                 ["notaryName"]       = s.NotaryName,
-                ["ptrNumber"]        = s.PtrNumber,
-                ["ibpNumber"]        = s.IbpNumber,
                 ["dateOfCommission"] = s.DateOfCommission,
                 ["documentName"]     = s.DocumentName,
                 ["localFilePath"]    = s.LocalFilePath,
@@ -431,8 +437,6 @@ namespace LegalOfficeApp
             Id               = d.Id,
             BookNumber       = d.ContainsField("bookNumber")       ? d.GetValue<string>("bookNumber")       : "",
             NotaryName       = d.ContainsField("notaryName")       ? d.GetValue<string>("notaryName")       : "",
-            PtrNumber        = d.ContainsField("ptrNumber")        ? d.GetValue<string>("ptrNumber")        : "",
-            IbpNumber        = d.ContainsField("ibpNumber")        ? d.GetValue<string>("ibpNumber")        : "",
             DateOfCommission = d.ContainsField("dateOfCommission") ? d.GetValue<string>("dateOfCommission") : "",
             DocumentName     = d.ContainsField("documentName")     ? d.GetValue<string>("documentName")     : "",
             LocalFilePath    = d.ContainsField("localFilePath")    ? d.GetValue<string>("localFilePath")    : "",
@@ -498,12 +502,16 @@ namespace LegalOfficeApp
 
         public async Task<List<ScheduledEmail>> GetSchedulesAsync(string? statusFilter = null)
         {
-            Query q = _db.Collection(ColSchedules);
-            if (!string.IsNullOrEmpty(statusFilter))
-                q = q.WhereEqualTo("status", statusFilter);
+            var snap = await _db.Collection(ColSchedules)
+                                .OrderBy("scheduledAt")
+                                .GetSnapshotAsync();
 
-            var snap = await q.OrderBy("scheduledAt").GetSnapshotAsync();
-            return snap.Documents.Select(DocToSchedule).ToList();
+            var list = snap.Documents.Select(DocToSchedule).ToList();
+
+            if (!string.IsNullOrEmpty(statusFilter))
+                list = list.Where(s => s.Status == statusFilter).ToList();
+
+            return list;
         }
 
         public async Task UpdateScheduleStatusAsync(string id, string status)
@@ -524,16 +532,21 @@ namespace LegalOfficeApp
 
         public async Task<List<ScheduledEmail>> GetOverdueSchedulesAsync()
         {
-            var snap = await _db.Collection(ColSchedules)
-                                .WhereEqualTo("status", "Pending")
-                                .GetSnapshotAsync();
+            var snap = await _db.Collection(ColSchedules).GetSnapshotAsync();
 
             return snap.Documents
-                    .Select(DocToSchedule)
-                    .Where(s => s.ScheduledAt <= DateTime.UtcNow)
-                    .ToList();
+                .Select(DocToSchedule)
+                .Where(s => (s.Status == "Pending" || s.Status == "Failed")
+                        && s.ScheduledAt.ToUniversalTime() <= DateTime.UtcNow)
+                .ToList();
         }
 
+        public async Task RetryFailedScheduleAsync(string id)
+        {
+            await _db.Collection(ColSchedules).Document(id)
+                    .UpdateAsync("status", "Pending");
+        }
+        
         private static ScheduledEmail DocToSchedule(DocumentSnapshot d)
         {
             List<string> ToStringList(string field) =>
