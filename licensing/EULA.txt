@@ -1,0 +1,71 @@
+# Legal Office App
+
+## End User License Agreement (EULA)
+
+**Version 1.0.2**
+Copyright © 2026 Gian Simon Lopez. All rights reserved.
+
+Please read this End User License Agreement ("Agreement") carefully before installing or using the Legal Office Notary App ("Software"). By installing, copying, or using the Software, you agree to be bound by the terms of this Agreement.
+
+## 1. License Grant
+
+The author grants you a non-exclusive, non-transferable, revocable license to install and use the Software solely for lawful purposes related to notarial office management and document processing.
+
+## 2. Ownership
+
+The Software, including its source code, design, user interface, documentation, graphics, and all associated intellectual property, is owned by the author and is protected by applicable copyright and intellectual property laws.
+
+This Agreement does not transfer ownership of the Software.
+
+## 3. Permitted Use
+
+You may:
+
+* Install and use the Software on one or more compatible Windows devices.
+* Use the Software for educational, demonstration, evaluation, or legitimate office operations.
+* Create backup copies solely for recovery purposes.
+
+## 4. Restrictions
+
+You may not:
+
+* Reverse engineer, decompile, or disassemble the Software except where permitted by law.
+* Modify, redistribute, sublicense, rent, lease, or sell the Software without prior written permission from the author.
+* Remove or alter copyright notices or other proprietary markings.
+* Use the Software for unlawful, fraudulent, or malicious activities.
+
+## 5. Third-Party Services
+
+The Software may integrate with third-party services, including cloud storage and database services. Your use of those services is subject to their respective terms, privacy policies, and availability.
+
+The author is not responsible for service interruptions, data loss, policy changes, or limitations imposed by third-party providers.
+
+## 6. Disclaimer of Warranty
+
+The Software is provided **"AS IS"** and **"AS AVAILABLE"**, without warranties of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, accuracy, reliability, or non-infringement.
+
+The author does not guarantee that the Software will operate without interruption or be free from errors.
+
+## 7. Limitation of Liability
+
+To the maximum extent permitted by law, the author shall not be liable for any direct, indirect, incidental, consequential, special, or punitive damages arising from the installation, use, inability to use, or performance of the Software, including but not limited to loss of data, business interruption, or financial loss.
+
+Users are responsible for maintaining appropriate backups of their data.
+
+## 8. Updates
+
+Future updates, enhancements, or bug fixes may be released at the author's discretion. This Agreement applies to all updates unless accompanied by a separate license.
+
+## 9. Termination
+
+This Agreement is effective until terminated. It will terminate automatically if you fail to comply with any of its terms. Upon termination, you must cease using the Software and remove all installed copies.
+
+## 10. Governing Law
+
+This Agreement shall be governed by the applicable laws of the Republic of the Philippines, without regard to conflict of law principles.
+
+## 11. Contact
+
+Questions regarding this Agreement may be directed to the author through the project's official GitHub repository.
+
+By installing or using the Legal Office Notary App, you acknowledge that you have read, understood, and agreed to the terms of this End User License Agreement.
