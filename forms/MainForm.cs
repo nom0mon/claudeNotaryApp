@@ -67,6 +67,7 @@ namespace LegalOfficeApp
                     return;
                 }
                 SchedulerService.Instance.Stop();
+                SessionManager.Logout();
                 Application.Exit();
             }
         }
