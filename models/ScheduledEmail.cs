@@ -13,5 +13,6 @@ namespace LegalOfficeApp
         public string       Status         { get; set; } = "Pending";
         public string?      Notes          { get; set; }
         public DateTime?    SentAt         { get; set; }
+        public List<string> DriveFileIds { get; set; } = new();
     }
 }

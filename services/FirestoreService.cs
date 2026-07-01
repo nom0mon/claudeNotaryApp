@@ -63,6 +63,10 @@ namespace LegalOfficeApp
         private const string ColLogs        = "activityLogs";
 
         private readonly FirestoreDb _db;
+        private GoogleDriveService? _drive;
+        public GoogleDriveService Drive => _drive ??= new GoogleDriveService(
+            LoadEmbeddedJson("drive-credentials.json"),
+            stagingFolderId: "1h-e8stW3C219DdFVY2aq2fUiWNidLqV2");
 
         // ── Singleton ─────────────────────────────────────────
         private static FirestoreService? _instance;
@@ -477,6 +481,18 @@ namespace LegalOfficeApp
             IsActive     = d.ContainsField("isActive") && d.GetValue<bool>("isActive")
         };
 
+        private static string LoadEmbeddedJson(string logicalName)
+        {
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            using var stream = assembly.GetManifestResourceStream(logicalName)
+                ?? throw new FileNotFoundException(
+                    $"Embedded resource '{logicalName}' not found. " +
+                    "Ensure it is marked as EmbeddedResource with a matching LogicalName in the .csproj.");
+
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }
+
         // ════════════════════════════════════════════════════════
         //  SCHEDULES
         // ════════════════════════════════════════════════════════
@@ -491,6 +507,7 @@ namespace LegalOfficeApp
                 ["filePaths"]      = schedule.FilePaths,
                 ["fileNames"]      = schedule.FileNames,
                 ["recipientEmail"] = schedule.RecipientEmail,
+                ["driveFileIds"]   = schedule.DriveFileIds, 
                 ["scheduledAt"]    = schedule.ScheduledAt.ToString("o"),
                 ["createdBy"]      = schedule.CreatedBy,
                 ["status"]         = "Pending",
@@ -561,6 +578,7 @@ namespace LegalOfficeApp
                 DocumentNames  = ToStringList("documentNames"),
                 FilePaths      = ToStringList("filePaths"),
                 FileNames      = ToStringList("fileNames"),
+                DriveFileIds   = ToStringList("driveFileIds"), 
                 RecipientEmail = d.ContainsField("recipientEmail") ? d.GetValue<string>("recipientEmail") : "",
                 ScheduledAt    = d.ContainsField("scheduledAt") &&
                                 DateTime.TryParse(d.GetValue<string>("scheduledAt"), out var sa)

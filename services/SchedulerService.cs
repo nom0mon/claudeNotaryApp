@@ -84,9 +84,8 @@ namespace LegalOfficeApp
         private int _isProcessingInt = 0; // backing field for Interlocked
 
         // ── Send one schedule ────────────────────────────────────
-        private async Task SendScheduleAsync(ScheduledEmail schedule)
+       private async Task SendScheduleAsync(ScheduledEmail schedule)
         {
-            // Lock it immediately so parallel polls don't double-send
             await FirestoreService.Instance.UpdateScheduleStatusAsync(
                 schedule.Id, "Sending");
 
@@ -95,15 +94,15 @@ namespace LegalOfficeApp
                 await FirestoreService.Instance.InsertLogAsync(
                     "System", "SchedulerAttempt",
                     $"Sending schedule {schedule.Id} → {schedule.RecipientEmail} | " +
-                    $"Files: {string.Join(", ", schedule.FilePaths)} | " +
+                    $"Drive files: {string.Join(", ", schedule.DriveFileIds)} | " +
                     $"ScheduledAt(UTC): {schedule.ScheduledAt:o} | " +
                     $"Now(UTC): {DateTime.UtcNow:o}",
                     "file");
 
-                await FirestoreService.Instance.Gmail.SendBatchDocumentAsync(
+                await FirestoreService.Instance.Gmail.SendBatchDocumentFromDriveAsync(
                     toEmail:       schedule.RecipientEmail,
                     toName:        schedule.RecipientEmail,
-                    filePaths:     schedule.FilePaths,
+                    driveFileIds:  schedule.DriveFileIds,
                     fileNames:     schedule.FileNames,
                     documentNames: schedule.DocumentNames,
                     notes:         schedule.Notes ?? "",
@@ -111,6 +110,10 @@ namespace LegalOfficeApp
 
                 await FirestoreService.Instance.UpdateScheduleStatusAsync(
                     schedule.Id, "Sent");
+
+                // Clean up Drive staging copies now that the email is sent
+                foreach (var fileId in schedule.DriveFileIds)
+                    await FirestoreService.Instance.Drive.DeleteAsync(fileId);
 
                 string docList = string.Join(", ",
                     schedule.DocumentNames.Select(d => $"'{d}'"));
@@ -121,7 +124,6 @@ namespace LegalOfficeApp
                     $"to {schedule.RecipientEmail}: {docList}",
                     "file");
 
-                // Show toast on UI thread
                 _syncCtx?.Post(_ =>
                 {
                     MessageBox.Show(
@@ -145,10 +147,9 @@ namespace LegalOfficeApp
                     "System", "ScheduledEmailFailed",
                     $"Schedule {schedule.Id} FAILED: {fullError}", "file");
 
-                // Revert to Pending so it retries next poll
                 await FirestoreService.Instance.UpdateScheduleStatusAsync(
                     schedule.Id, "Pending");
             }
-        }
+        } 
     }
 }

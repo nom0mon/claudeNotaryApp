@@ -319,7 +319,7 @@ namespace LegalOfficeApp
 
             // Combine date + time
             DateTime scheduledAt = dtpScheduleDate.Value.Date
-                                 + dtpScheduleTime.Value.TimeOfDay;
+                                + dtpScheduleTime.Value.TimeOfDay;
 
             if (scheduledAt <= DateTime.Now)
             {
@@ -328,19 +328,50 @@ namespace LegalOfficeApp
                 return;
             }
 
+            // Verify local files still exist before attempting upload
+            var missingFiles = _submissions
+                .Where(s => !File.Exists(s.LocalFilePath))
+                .Select(s => s.DocumentName)
+                .ToList();
+
+            if (missingFiles.Any())
+            {
+                MessageBox.Show(
+                    $"The following files no longer exist locally:\n\n" +
+                    string.Join("\n", missingFiles) +
+                    "\n\nFiles must be present on disk to schedule.",
+                    "Files Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             btnSchedule.Enabled     = false;
-            btnSchedule.Text        = "Saving…";
+            btnSchedule.Text        = "Uploading…";
             lblStatusSched.ForeColor = Color.Gray;
-            lblStatusSched.Text     = "Saving schedule to Firestore…";
 
             try
             {
+                // ── Upload each file to Drive staging folder ──────────────
+                var driveFileIds = new List<string>();
+                for (int i = 0; i < _submissions.Count; i++)
+                {
+                    var s = _submissions[i];
+                    lblStatusSched.Text = $"Uploading to Drive… ({i + 1}/{_submissions.Count})";
+
+                    string fileId = await FirestoreService.Instance.Drive
+                        .UploadAsync(s.LocalFilePath, s.FileName);
+                    driveFileIds.Add(fileId);
+                }
+
+                btnSchedule.Text    = "Saving…";
+                lblStatusSched.Text = "Saving schedule to Firestore…";
+
                 var schedule = new ScheduledEmail
                 {
                     SubmissionIds  = _submissions.Select(s => s.Id).ToList(),
                     DocumentNames  = _submissions.Select(s => s.DocumentName).ToList(),
                     FilePaths      = _submissions.Select(s => s.LocalFilePath).ToList(),
                     FileNames      = _submissions.Select(s => s.FileName).ToList(),
+                    DriveFileIds   = driveFileIds,
                     RecipientEmail = email,
                     ScheduledAt    = scheduledAt.ToUniversalTime(),
                     CreatedBy      = SessionManager.Current?.FullName ?? "",
@@ -374,7 +405,6 @@ namespace LegalOfficeApp
                 btnSchedule.Text        = "📅  Schedule";
             }
         }
-
         // ── SHARED HELPERS ───────────────────────────────────────
         private async Task LoadRecipientsAsync()
         {

@@ -431,9 +431,11 @@ FodyWeavers.xsd
 #Custom local configuration files  - NEVER commit this
 appsettings.json
 firebase-credentials.json
+drive-credentials.json
 
 # SQLite database
 *.db
 *.db-shm
-*.db-walf i r e b a s e - c r e d e n t i a l s . j s o n  
+*.db-walf i r e b a s e - c r e d e n t i a l s . j s o n 
+ 
  

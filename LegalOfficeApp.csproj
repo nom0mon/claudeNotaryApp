@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <!-- Firestore (replaces SQLite) -->
+    <PackageReference Include="Google.Apis.Drive.v3" Version="1.75.0.4192" />
     <PackageReference Include="Google.Cloud.Firestore" Version="4.3.0" />
     <PackageReference Include="MailKit" Version="4.17.0" />
     <!-- MEGA upload -->
@@ -31,11 +32,16 @@
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
 
-
     <!-- Firebase service account credentials — NEVER commit this file to git -->
     <EmbeddedResource Include="res\firebase-credentials.json">
         <LogicalName>firebase-credentials.json</LogicalName>
     </EmbeddedResource>
+
+    <!-- Google Drive service account credentials — NEVER commit this file to git -->
+    <EmbeddedResource Include="res\drive-credentials.json">
+        <LogicalName>drive-credentials.json</LogicalName>
+    </EmbeddedResource>
+
   </ItemGroup>
 
 </Project>

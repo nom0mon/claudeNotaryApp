@@ -262,5 +262,42 @@ namespace LegalOfficeApp
         await smtp.SendAsync(message);
         await smtp.DisconnectAsync(true);
     }
+
+      public async Task SendBatchDocumentFromDriveAsync(
+      string       toEmail,
+      string       toName,
+      List<string> driveFileIds,
+      List<string> fileNames,
+      List<string> documentNames,
+      string?      notes  = null,
+      string?      sentBy = null)
+    {
+        await EnsureConfigLoadedAsync();
+
+        string tempDir = Path.Combine(Path.GetTempPath(), "LegalOfficeScheduled_" + Guid.NewGuid());
+        Directory.CreateDirectory(tempDir);
+
+        var tempFilePaths = new List<string>();
+
+        try
+        {
+            // Download each Drive file to a temp local path
+            for (int i = 0; i < driveFileIds.Count; i++)
+            {
+                string tempPath = Path.Combine(tempDir, fileNames[i]);
+                await FirestoreService.Instance.Drive.DownloadAsync(driveFileIds[i], tempPath);
+                tempFilePaths.Add(tempPath);
+            }
+
+            // Reuse the existing batch-send logic, now pointed at temp files
+            await SendBatchDocumentAsync(
+                toEmail, toName, tempFilePaths, fileNames, documentNames, notes, sentBy);
+        }
+        finally
+        {
+            // Clean up temp files regardless of success/failure
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
     }
 }

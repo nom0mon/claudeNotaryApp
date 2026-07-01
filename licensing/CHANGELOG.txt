@@ -1,9 +1,7 @@
-Legal Office App v1.0.2
+Legal Office App v1.0.3
 
 What's New:
-- Firebase Firestore integration
-- Remote document synchronization
-- Improved UI
+- Sign out on close
 - Bug fixes and performance improvements
 
 Thank you for using Legal Office App!
