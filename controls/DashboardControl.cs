@@ -115,8 +115,6 @@ namespace LegalOfficeApp
             this.Controls.Add(tableCard);
             this.Controls.Add(midRow);
             this.Controls.Add(cardRow);
-
-            this.HandleCreated += (s, e) => _ = RefreshDataAsync();
         }
 
         // ════════════════════════════════════════════════════════
