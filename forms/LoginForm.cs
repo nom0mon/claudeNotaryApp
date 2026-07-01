@@ -12,9 +12,14 @@ namespace LegalOfficeApp
         private TextBox txtUsername, txtPassword;
         private Label   lblError;
         private Button  btnLogin;
+        private Image? logoImage;
 
         public LoginForm()
         {
+            LoadHeaderLogo();
+            ApplyIcon();
+            
+            
             Text            = "Legal Office – Calamba City";
             Size            = new Size(420, 520);
             StartPosition   = FormStartPosition.CenterScreen;
@@ -23,21 +28,37 @@ namespace LegalOfficeApp
             BackColor       = Color.White;
             Font            = new Font("Segoe UI", 9.5f);
             
-            ApplyIcon();
             BuildUI();
         }
 
+        private void LoadHeaderLogo()
+        {
+            try
+            {
+                var asm = Assembly.GetExecutingAssembly();
+
+                string? resourceName = asm.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("header-logo.png", StringComparison.OrdinalIgnoreCase));
+
+                if (resourceName != null)
+                {
+                    using var stream = asm.GetManifestResourceStream(resourceName);
+                    if (stream != null)
+                        logoImage = Image.FromStream(stream);
+                }
+            }
+            catch { logoImage = null; }
+        }
         private void ApplyIcon()
         {
             string exeDir  = AppDomain.CurrentDomain.BaseDirectory;
             string[] paths = {
                 Path.Combine(exeDir, "logo.ico"),
                 Path.Combine(exeDir, "app.ico"),
-                // 2. Try project root (development / VS Code)
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "logo.ico"),
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "app.ico"),
             };
- 
+
             foreach (var p in paths)
             {
                 try
@@ -46,16 +67,14 @@ namespace LegalOfficeApp
                     if (File.Exists(full))
                     {
                         var icon = new Icon(full);
-                        this.Icon                    = icon;
-                        // Also set the taskbar icon via ShowInTaskbar
-                        this.ShowInTaskbar           = true;
+                        this.Icon          = icon;      // window/taskbar icon only
+                        this.ShowInTaskbar = true;
                         return;
                     }
                 }
                 catch { }
             }
- 
-            // 3. Fall back to embedded resource named "logo.ico" or "app.ico"
+
             try
             {
                 var asm = Assembly.GetExecutingAssembly();
@@ -64,7 +83,8 @@ namespace LegalOfficeApp
                     if (name.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
                     {
                         using var stream = asm.GetManifestResourceStream(name)!;
-                        this.Icon          = new Icon(stream);
+                        var icon = new Icon(stream);
+                        this.Icon          = icon;
                         this.ShowInTaskbar = true;
                         return;
                     }
@@ -72,10 +92,29 @@ namespace LegalOfficeApp
             }
             catch { }
         }
-
         private void BuildUI()
         {
-            var header = new Panel { Dock = DockStyle.Top, Height = 160, BackColor = Navy };
+            var header = new Panel { Dock = DockStyle.Top, Height = 180, BackColor = Navy };
+
+            var headerLayout = new TableLayoutPanel
+            {
+                Dock        = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount    = 2,
+                BackColor   = Navy          // explicit color, not Transparent
+            };
+            headerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90f));
+            headerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            var picLogo = new PictureBox
+            {
+                Dock      = DockStyle.Fill,
+                SizeMode  = PictureBoxSizeMode.Zoom,
+                Image     = logoImage,      // may be null — PictureBox handles that fine
+                BackColor = Navy,           // explicit color, not Transparent
+                Padding   = new Padding(0, 10, 0, 0)
+            };
+
             var lblTitle = new Label
             {
                 Text      = "LEGAL OFFICE\nCALAMBA CITY",
@@ -84,7 +123,10 @@ namespace LegalOfficeApp
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock      = DockStyle.Fill
             };
-            header.Controls.Add(lblTitle);
+
+            headerLayout.Controls.Add(picLogo, 0, 0);
+            headerLayout.Controls.Add(lblTitle, 0, 1);
+            header.Controls.Add(headerLayout);
 
             var pnlForm = new Panel { Dock = DockStyle.Fill, Padding = new Padding(40, 30, 40, 20) };
 
@@ -127,7 +169,7 @@ namespace LegalOfficeApp
 
             var lblHint = new Label
             {
-                Text      = "Default: admin / admin123",
+                Text      = "Copyright © 2026 Legal Office. All Rights Reserved.",
                 ForeColor = Color.FromArgb(160, 160, 160),
                 Font      = new Font("Segoe UI", 8f),
                 Location  = new Point(40, 245),
@@ -271,7 +313,6 @@ namespace LegalOfficeApp
                 failed > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
         }
         catch { /* non-fatal — don't block login */ }
-    }
-
+        }
     }
 }
