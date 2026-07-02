@@ -432,6 +432,7 @@ FodyWeavers.xsd
 appsettings.json
 firebase-credentials.json
 drive-credentials.json
+client_secret.json
 
 # SQLite database
 *.db
